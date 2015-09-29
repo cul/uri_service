@@ -18,8 +18,5 @@ notifications:
 env:
   global:
     - NOKOGIRI_USE_SYSTEM_LIBRARIES=true
-
-before_script:
-  - bundle exec rake uri_service:db:setup
   
 script: bundle exec rake hyacinth:ci
