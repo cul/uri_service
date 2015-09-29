@@ -1,0 +1,8 @@
+.bundle
+Gemfile.lock
+/tmp
+*.gem
+/jetty
+.DS_Store
+*~
+*.komodoproject

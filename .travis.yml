@@ -1,0 +1,25 @@
+language: ruby
+cache: bundler
+sudo: false
+
+rvm:
+  - 2.1.5
+  
+jdk: 'oraclejdk8'
+
+matrix:
+  include:
+    - rvm: 2.2.3
+    - rvm: 1.9.3
+
+notifications:
+  irc: "irc.freenode.org#ldpddev"
+
+env:
+  global:
+    - NOKOGIRI_USE_SYSTEM_LIBRARIES=true
+
+before_script:
+  - bundle exec rake uri_service:db:setup
+  
+script: bundle exec rake hyacinth:ci

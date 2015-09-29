@@ -1,0 +1,32 @@
+# Database options are based on offerings from: http://sequel.jeremyevans.net/rdoc/files/doc/opening_databases_rdoc.html
+
+# sqlite3 example (requires sqlite3 gem)
+sqlite:
+  local_uri_base: 'http://id.example.com/term/'
+  solr:
+    url: 'http://localhost:9983/solr/uri_service_test'
+    pool_size: 5
+    pool_timeout: 5000
+  database:
+    adapter: sqlite
+    database: db/test.sqlite3
+    max_connections: 5
+    pool_timeout: 5000
+
+# mysql2 example (requires mysql gem)
+mysql2:
+  local_uri_base: 'http://id.example.com/term/'
+  solr:
+    url: 'http://localhost:9983/solr/uri_service_test'
+    pool_size: 5
+    pool_timeout: 5000
+  database:
+    adapter: mysql2
+    database: dbname
+    max_connections: 10
+    pool_timeout: 5000 # Number of seconds to wait if a connection cannot be acquired before raising an error
+    timeout: 5000 # Number of seconds that mysql will wait before killing an idle connection (i.e. MySQL wait_timeout)
+    host: db.domain.com
+    port: 3306
+    username: the_username
+    password: the_password
