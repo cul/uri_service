@@ -112,24 +112,28 @@ Parameters for the database config are passed directly to a new instance of a Se
 ### Creating Vocabularies and Terms:
 
 Create a vocabulary:
-```
+```ruby
 # Creates a vocabulary with string key 'names' and display label 'Names'
+
 UriService.client.create_vocabulary('names', 'Names')
 ```
 
 Create a term in a vocabulary:
-```
+```ruby
 # Creates a term in the 'names' vocabulary, using the given value, uri and a couple of custom key-value pairs
+
 UriService.client.create_term('names', 'Lincoln, Abraham, 1809-1865', 'http://id.loc.gov/authorities/names/n79006779', {'is_awesome' => true, 'best_president' => true, 'hat_type' => 'Stove Pipe'})
 ```
 
 Create a LOCAL term in a vocabulary (when you don't have a URI for your term):
-```
-UriService.client.create_local_term('names', 'Baby, Newborn', {'is_baby' => true}) # Creates a new LOCAL term in the 'names' vocabulary.  New URI is automatically generated.
+```ruby
+# Creates a new LOCAL term in the 'names' vocabulary.  New URI is automatically generated.
+
+UriService.client.create_local_term('names', 'Baby, Newborn', {'is_baby' => true})
 ```
 
 Find a term in a vocabulary (after you've already added the term to the vocabulary):
-```
+```ruby
 UriService.client.find_terms_by_query('names', 'batman')
 # =>
 # [
