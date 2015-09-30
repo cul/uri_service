@@ -280,7 +280,6 @@ describe UriService::Client, type: :integration do
           'is_local' => false
         }]
         
-        expect(UriService.client.find_terms_by_query(vocabulary_string_key, '')).to eq([]) # Empty string returns no results
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'z')).to eq([]) # Letter not present in term returns no results
         
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'W')).to eq([]) # < 3 char string returns no results
@@ -302,6 +301,40 @@ describe UriService::Client, type: :integration do
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'What a great val')).to eq(expected_search_results)
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'What a great valu')).to eq(expected_search_results)
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'What a great value')).to eq(expected_search_results)
+      end
+      
+      it "sorts exact matches first" do
+        vocabulary_string_key = 'names'
+        UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+        
+        UriService.client.create_term(vocabulary_string_key, 'Cat', 'http://id.loc.gov/fake/111')
+        UriService.client.create_term(vocabulary_string_key, 'Catastrophe', 'http://id.loc.gov/fake/222')
+        UriService.client.create_term(vocabulary_string_key, 'Catastrophic', 'http://id.loc.gov/fake/333')
+        
+        expected_search_results = [
+          { 'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Cat', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false },
+          { 'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Catastrophe', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false },
+          { 'uri' => 'http://id.loc.gov/fake/333', 'value' => 'Catastrophic', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false },
+        ]
+        
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Cat')).to eq(expected_search_results)
+      end
+      
+      it "sorts full word matches first when present, even if there are other words in the term and it would otherwise sort later alphabetically" do
+        vocabulary_string_key = 'names'
+        UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+        
+        UriService.client.create_term(vocabulary_string_key, 'A Catastrophe', 'http://id.loc.gov/fake/111')
+        UriService.client.create_term(vocabulary_string_key, 'Not Catastrophic', 'http://id.loc.gov/fake/222')
+        UriService.client.create_term(vocabulary_string_key, 'The Cat', 'http://id.loc.gov/fake/333')
+        
+        expected_search_results = [
+          { 'uri' => 'http://id.loc.gov/fake/333', 'value' => 'The Cat', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false },
+          { 'uri' => 'http://id.loc.gov/fake/111', 'value' => 'A Catastrophe', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false },
+          { 'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Not Catastrophic', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false },
+        ]
+        
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Cat')).to eq(expected_search_results)
       end
       
       it "sorts equally relevant results alphabetically" do
@@ -333,7 +366,7 @@ describe UriService::Client, type: :integration do
           }
         ]
         
-        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Steve')).to eq(expected_search_results) # Empty string returns no results
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Steve')).to eq(expected_search_results)
       end
       
       it "returns results for mid-word partial word queries" do
@@ -358,7 +391,7 @@ describe UriService::Client, type: :integration do
           }
         ]
         
-        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'man')).to eq(expected_search_results) # Empty string returns no results
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'man')).to eq(expected_search_results)
       end
       
       it "doesn't return results that do not include the query" do
@@ -377,7 +410,7 @@ describe UriService::Client, type: :integration do
           }
         ]
         
-        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'bat')).to eq(expected_search_results) # Empty string returns no results
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'bat')).to eq(expected_search_results)
       end
       
       it "performs a case insensitive search" do
@@ -395,8 +428,51 @@ describe UriService::Client, type: :integration do
           }
         ]
         
-        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'bAtMaNnErS')).to eq(expected_search_results) # Empty string returns no results
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'bAtMaNnErS')).to eq(expected_search_results)
       end
+      
+      it "returns all terms when the supplied query is an empty string" do
+        vocabulary_string_key = 'names'
+        UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+        UriService.client.create_term(vocabulary_string_key, 'Val 1', 'http://id.loc.gov/fake/term1')
+        UriService.client.create_term(vocabulary_string_key, 'Val 2', 'http://id.loc.gov/fake/term2')
+        UriService.client.create_term(vocabulary_string_key, 'Val 3', 'http://id.loc.gov/fake/term3')
+        
+        expected_search_results = [
+          {'uri' => 'http://id.loc.gov/fake/term1', 'value' => 'Val 1', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/term2', 'value' => 'Val 2', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/term3', 'value' => 'Val 3', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false}
+        ]
+        
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, '')).to eq(expected_search_results)
+      end
+      
+      it "can page through results using the limit and start params, proving that the limit and start params work properly" do
+        vocabulary_string_key = 'names'
+        UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+        10.times do |i|
+          UriService.client.create_term(vocabulary_string_key, "Name #{i}", "http://id.loc.gov/fake/#{i}")
+        end
+        
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, '', 4, 0)).to eq([
+          {'uri' => 'http://id.loc.gov/fake/0', 'value' => 'Name 0', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/1', 'value' => 'Name 1', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/2', 'value' => 'Name 2', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/3', 'value' => 'Name 3', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+        ])
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, '', 4, 4)).to eq([
+          {'uri' => 'http://id.loc.gov/fake/4', 'value' => 'Name 4', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/5', 'value' => 'Name 5', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/6', 'value' => 'Name 6', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/7', 'value' => 'Name 7', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+        ])
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, '', 4, 8)).to eq([
+          {'uri' => 'http://id.loc.gov/fake/8', 'value' => 'Name 8', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+          {'uri' => 'http://id.loc.gov/fake/9', 'value' => 'Name 9', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+        ])
+        
+      end
+      
     end
     
     describe "#delete_term" do

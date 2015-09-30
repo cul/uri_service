@@ -31,6 +31,7 @@ namespace :uri_service do
     # Delete existing test database
     uri_service_config = YAML.load(File.new('spec/fixtures/uri_service_test_config.yml'))['sqlite']
     File.delete(uri_service_config['database']['database']) if File.exists?(uri_service_config['database']['database'])
+    FileUtils.mkdir_p(File.dirname(uri_service_config['database']['database']))
     client = UriService::Client.new(uri_service_config)
     client.create_required_tables
   end

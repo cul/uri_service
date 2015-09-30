@@ -92,6 +92,7 @@ class UriService::Client
   
   def create_vocabulary(string_key, display_label)
     if string_key.to_s == 'all'
+      # Note: There isn't currently a use case for searching across 'all' vocabularies, but I'm leaving this restriction as a placeholder in case that changes.
       raise UriService::InvalidVocabularyStringKeyError, 'The value "all" is a reserved word and cannot be used as the string_key value for a vocabulary.'
     end
     unless string_key =~ ALPHANUMERIC_UNDERSCORE_KEY_REGEX
@@ -227,16 +228,15 @@ class UriService::Client
     return term_hash
   end
   
-  def find_terms_by_query(vocabulary_string_key, value_query)
-    
-    return [] if value_query.empty?
-    
+  def find_terms_by_query(vocabulary_string_key, value_query, limit=10, start=0)
     terms_to_return = []
     UriService.client.rsolr_pool.with do |rsolr|
       
       solr_params = {
-        :q => UriService.solr_escape(value_query),
-        :fq => 'vocabulary_string_key_ssi:' + UriService.solr_escape(vocabulary_string_key)
+        :q => value_query == '' ? '*' : UriService.solr_escape(value_query),
+        :fq => 'vocabulary_string_key_ssi:' + UriService.solr_escape(vocabulary_string_key),
+        :rows => limit,
+        :start => start
       }
       
       response = rsolr.get('suggest', params: solr_params)

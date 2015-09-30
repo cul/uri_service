@@ -9,7 +9,7 @@ sqlite:
     pool_timeout: 5000
   database:
     adapter: sqlite
-    database: db/test.sqlite3
+    database: tmp/db/test.sqlite3
     max_connections: 5
     pool_timeout: 5000
 
