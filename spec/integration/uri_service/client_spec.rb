@@ -131,6 +131,19 @@ describe UriService::Client, type: :integration do
     
     context "term creation" do
       describe "#create_term_impl" do
+        it "returns a frozen term hash" do
+          vocabulary_string_key = 'names'
+          uri = 'http://id.library.columbia.edu/term/1234567'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          term = UriService.client.create_term(vocabulary_string_key, 'Original Value', uri)
+          expect(term.frozen?).to eq(true)
+          expect(term).to eq({
+            'vocabulary_string_key' => vocabulary_string_key,
+            'uri' => uri,
+            'value' => 'Original Value',
+            'is_local' => false
+          })
+        end
         it "rejects invalid URIs" do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
@@ -189,12 +202,14 @@ describe UriService::Client, type: :integration do
       end
       
       describe "#create_term" do
-        it "delegates work appropriately to the create_term_impl method, thereby creating a new term" do
+        it "delegates work appropriately to the create_term_impl method, thereby creating a new term and returning a frozen term hash" do
           vocabulary_string_key = 'names'
           uri = 'http://id.library.columbia.edu/term/1234567'
           value = 'What a great value'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_term(vocabulary_string_key, value, uri)
+          term = UriService.client.create_term(vocabulary_string_key, value, uri)
+          expect(term.frozen?).to eq(true)
+          expect(term['uri']).to eq(uri)
           expect(UriService.client.find_term_by_uri(uri)).not_to be_nil
         end
         it "sets the is_local value to false" do
@@ -215,17 +230,18 @@ describe UriService::Client, type: :integration do
             UriService.client.create_local_term(vocabulary_string_key, 'Good old fashioned value')
           }.not_to raise_error
         end
-        it "delegates work appropriately to the create_term_impl method, thereby creating a new term" do
+        it "delegates work appropriately to the create_term_impl method, thereby creating a new term and returning a frozen term hash" do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_local_term(vocabulary_string_key, 'Cool local value')
-          expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Cool local value').length).to eq(1)
+          term = UriService.client.create_local_term(vocabulary_string_key, 'Cool local value')
+          expect(term.frozen?).to eq(true)
+          expect(UriService.client.find_term_by_uri(term['uri'])).not_to be_nil
         end
         it "sets the is_local value to true" do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_local_term(vocabulary_string_key, 'Nice term')
-          expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Nice term')[0]['is_local']).to eq(true)
+          term = UriService.client.create_local_term(vocabulary_string_key, 'Nice term')
+          expect(UriService.client.find_term_by_uri(term['uri'])['is_local']).to eq(true)
         end
       end
       
@@ -548,8 +564,33 @@ describe UriService::Client, type: :integration do
     end
     
     context "term update methods" do
-      
       describe "#update_term" do
+        it "can update the value and additional_fields for an existing term" do
+          vocabulary_string_key = 'names'
+          uri = 'http://id.library.columbia.edu/term/1234567'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          UriService.client.create_term(vocabulary_string_key, 'Original Value', uri)
+          expect(UriService.client.find_term_by_uri(uri)['value']).to eq('Original Value')
+          UriService.client.update_term(uri, {value: 'New Value', additional_fields: {'new_field' => 'new field value'}})
+          term = UriService.client.find_term_by_uri(uri)
+          expect(term['value']).to eq('New Value')
+          expect(term['new_field']).to eq('new field value')
+        end
+        it "returns a frozen term hash" do
+          vocabulary_string_key = 'names'
+          uri = 'http://id.library.columbia.edu/term/1234567'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          UriService.client.create_term(vocabulary_string_key, 'Original Value', uri)
+          term = UriService.client.update_term(uri, {value: 'New Value', additional_fields: {'new_field' => 'new field value'}})
+          expect(term.frozen?).to eq(true)
+          expect(term).to eq({
+            'vocabulary_string_key' => vocabulary_string_key,
+            'uri' => uri,
+            'value' => 'New Value',
+            'is_local' => false,
+            'new_field' => 'new field value'
+          })
+        end
         it "properly updates both the database and solr" do
           vocabulary_string_key = 'names'
           uri = 'http://id.library.columbia.edu/term/1234567'
@@ -594,17 +635,6 @@ describe UriService::Client, type: :integration do
             UriService.client.update_term('http://this.does.not.exist/really/does/not', {value: 'New Value'})
           }.to raise_error(UriService::NonExistentUriError)
         end
-        it "can update the value and additional_fields for an existing term" do
-          vocabulary_string_key = 'names'
-          uri = 'http://id.library.columbia.edu/term/1234567'
-          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_term(vocabulary_string_key, 'Original Value', uri)
-          expect(UriService.client.find_term_by_uri(uri)['value']).to eq('Original Value')
-          UriService.client.update_term(uri, {value: 'New Value', additional_fields: {'new_field' => 'new field value'}})
-          term = UriService.client.find_term_by_uri(uri)
-          expect(term['value']).to eq('New Value')
-          expect(term['new_field']).to eq('new field value')
-        end
         it "rejects invalid additional_fields keys (which can only contain lower case letters, numbers and underscores, but cannot start with an underscore)" do
           vocabulary_string_key = 'names'
           uri = "http://id.library.columbia.edu/term/111"
@@ -644,6 +674,76 @@ describe UriService::Client, type: :integration do
           expect(term['another_key']).to eq('another val')
         end
       end
+    end
+  end
+  
+  describe "#generate_frozen_term_hash" do
+    it "works as expected" do
+      vocabulary_string_key = 'names'
+      uri = 'http://id.loc.gov/123'
+      value = 'Some value'
+      is_local = false
+      
+      additional_fields = {
+        'field1' => 'one',
+        'field2' => 2,
+        'field3' => true,
+        'field4' => ['one', 'two', 'three'],
+        'field5' => [1, 2, 3]
+      }
+      
+      term = UriService.client.generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, is_local)
+      expect(term.frozen?).to eq(true)
+      expect(term).to eq({
+        'vocabulary_string_key' => vocabulary_string_key,
+        'uri' => uri,
+        'value' => value,
+        'is_local' => is_local,
+        'field1' => 'one',
+        'field2' => 2,
+        'field3' => true,
+        'field4' => ['one', 'two', 'three'],
+        'field5' => [1, 2, 3]
+      })
+      
+      # And when we attempt to modify the frozen hash, a RuntimeError error is raised
+      expect{ term['value'] = 'new value' }.to raise_error(RuntimeError)
+    end
+  end
+  
+  describe "#term_solr_doc_to_frozen_term_hash" do
+    it "works as expected" do
+      
+      vocabulary_string_key = 'names'
+      uri = 'http://id.loc.gov/123'
+      value = 'Some value'
+      is_local = false
+      
+      doc = {
+        'vocabulary_string_key' => vocabulary_string_key,
+        'uri' => uri,
+        'value' => value,
+        'is_local' => is_local,
+        'field1_ssi' => 'one',
+        'field2_isi' => 2,
+        'field3_bsi' => true,
+        'field4_ssim' => ['one', 'two', 'three'],
+        'field5_isim' => [1, 2, 3]
+      }
+      
+      term = UriService.client.term_solr_doc_to_frozen_term_hash(doc)
+      expect(term.frozen?).to eq(true)
+      expect(term).to eq({
+        'vocabulary_string_key' => vocabulary_string_key,
+        'uri' => uri,
+        'value' => value,
+        'is_local' => is_local,
+        'field1' => 'one',
+        'field2' => 2,
+        'field3' => true,
+        'field4' => ['one', 'two', 'three'],
+        'field5' => [1, 2, 3]
+      })
     end
   end
   

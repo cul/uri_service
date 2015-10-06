@@ -112,7 +112,7 @@ class UriService::Client
   
   # Creates a new term.
   def create_term(vocabulary_string_key, value, term_uri, additional_fields={})
-    self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, false)
+    return self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, false)
   end
   
   # Creates a new local term, auto-generating a URI
@@ -126,14 +126,13 @@ class UriService::Client
     # Getting a duplicate UUID from SecureRandom.uuid is EXTREMELY unlikely, but we'll account for it just in case (by making a few more attempts).
     5.times {
       begin
-        self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, true)
-        break
+        return self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, true)
       rescue UriService::ExistingUriError
-        if defined?(Rails)
-          Rails.logger.error "UriService generated a duplicate random UUID (via SecureRandom.uuid) and will now attempt to create another.  This type of problem is EXTREMELY rare."
-        end
+        raise UriService::ExistingUriError, "UriService generated a duplicate random UUID (via SecureRandom.uuid) and will now attempt to create another.  This type of problem is EXTREMELY rare."
       end
     }
+    
+    return nil
   end
   
   def create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, is_local)
@@ -165,6 +164,23 @@ class UriService::Client
       end
     end
     
+    return generate_frozen_term_hash(vocabulary_string_key, value, term_uri, additional_fields, is_local)
+  end
+  
+  def generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, is_local)
+    hash_to_return = {}
+    hash_to_return['uri'] = uri
+    hash_to_return['value'] = value
+    hash_to_return['is_local'] = is_local
+    hash_to_return['vocabulary_string_key'] = vocabulary_string_key
+    
+    additional_fields.each do |key, val|
+      hash_to_return[key] = val
+    end
+    
+    hash_to_return.freeze # To make this a read-only hash
+    
+    return hash_to_return
   end
   
   def create_term_solr_doc(vocabulary_string_key, value, uri, additional_fields, is_local)
@@ -236,27 +252,30 @@ class UriService::Client
     UriService.client.rsolr_pool.with do |rsolr|
       response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + UriService.solr_escape(uri) })
       if response['response']['numFound'] == 1
-        return term_solr_doc_to_term_hash(response['response']['docs'].first)
+        return term_solr_doc_to_frozen_term_hash(response['response']['docs'].first)
       end
     end
     return nil
   end
   
-  def term_solr_doc_to_term_hash(term_solr_doc)
-    term_hash = {}
-    term_solr_doc.each do |key, value|
+  def term_solr_doc_to_frozen_term_hash(term_solr_doc)
+    
+    uri = term_solr_doc.delete('uri')
+    vocabulary_string_key = term_solr_doc.delete('vocabulary_string_key')
+    value = term_solr_doc.delete('value')
+    is_local = term_solr_doc.delete('is_local')
+    additional_fields = {}
+    
+    # Iterate through remaining keys and put them in additional_fields after removing suffixes
+    term_solr_doc.each do |key, val|
       # Skip certain automatically added fields that aren't part of the term_hash
       next if ['_version_', 'timestamp', 'score'].include?(key)
       
-      if CORE_FIELD_NAMES.include?(key)
-        term_hash[key] = value
-      else
-        # Remove trailing '_si', '_bi', etc. if present for solr-suffixed fields
-        term_hash[key.gsub(/_[^_]+$/, '')] = value
-      end
-      
+      # Remove trailing '_si', '_bi', etc. if present for solr-suffixed fields
+      additional_fields[key.gsub(/_[^_]+$/, '')] = val
     end
-    return term_hash
+    
+    return generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, is_local)
   end
   
   def find_terms_by_query(vocabulary_string_key, value_query, limit=10, start=0)
@@ -273,7 +292,7 @@ class UriService::Client
       response = rsolr.get('suggest', params: solr_params)
       if response['response']['numFound'] > 0
         response['response']['docs'].each do |doc|
-          terms_to_return << term_solr_doc_to_term_hash(doc)
+          terms_to_return << term_solr_doc_to_frozen_term_hash(doc)
         end
       end
     end
@@ -335,6 +354,8 @@ class UriService::Client
       dataset.update(value: new_value, additional_fields: JSON.generate(new_additional_fields))
       self.send_term_to_solr(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
     end
+    
+    return generate_frozen_term_hash(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
   end
   
 end
