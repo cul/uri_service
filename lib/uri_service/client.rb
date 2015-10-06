@@ -4,6 +4,7 @@ class UriService::Client
   
   ALPHANUMERIC_UNDERSCORE_KEY_REGEX = /\A[a-z]+[a-z0-9_]*\z/
   VALID_URI_REGEX = /\A#{URI::regexp(['http', 'https'])}\z/
+  CORE_FIELD_NAMES = ['uri', 'vocabulary_string_key', 'value', 'is_local']
   
   def initialize(opts)
     raise UriService::InvalidOptsError, "Must supply opts['local_uri_base'] to initialize method." if opts['local_uri_base'].nil?
@@ -137,6 +138,8 @@ class UriService::Client
   
   def create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, is_local)
     
+    additional_fields.stringify_keys!
+    
     #Ensure that vocabulary with vocabulary_string_key exists
     if self.find_vocabulary(vocabulary_string_key).nil?
       raise UriService::NonExistentVocabularyError, "There is no vocabulary with string key: " + vocabulary_string_key
@@ -156,9 +159,7 @@ class UriService::Client
           vocabulary_string_key: vocabulary_string_key,
           additional_fields: JSON.generate(additional_fields)
         )
-        
-        self.send_term_to_solr(@db[UriService::TERMS].where(uri: term_uri).first)
-        
+        send_term_to_solr(vocabulary_string_key, value, term_uri, additional_fields, is_local)
       rescue Sequel::UniqueConstraintViolation
         raise UriService::ExistingUriError, "A term already exists with uri: " + term_uri + " (conflict found via uri_hash check)"
       end
@@ -166,36 +167,58 @@ class UriService::Client
     
   end
   
-  def term_db_row_to_solr_doc(term_row_data_from_db)
+  def create_term_solr_doc(vocabulary_string_key, value, uri, additional_fields, is_local)
     doc = {}
-    doc['uri'] = term_row_data_from_db[:uri]
-    doc['value'] = term_row_data_from_db[:value]
-    doc['is_local_bsi'] = term_row_data_from_db[:is_local]
-    doc['vocabulary_string_key_ssi'] = term_row_data_from_db[:vocabulary_string_key]
-    JSON.parse(term_row_data_from_db[:additional_fields]).each do |key, val|
-      doc[key + '_ssi'] = val
+    doc['uri'] = uri
+    doc['value'] = value
+    doc['is_local'] = is_local
+    doc['vocabulary_string_key'] = vocabulary_string_key
+    
+    additional_fields.each do |key, val|
+      doc[key + self.class.get_solr_suffix_for_object(val)] = val
     end
     
     return doc
   end
   
+  def self.get_solr_suffix_for_object(obj)
+    if obj.is_a?(Array)
+      # Note boolean arrays aren't supported because they don't seem useful in this context
+      if obj[0].is_a?(Fixnum)
+        return '_isim'
+      else
+        # Treat like a string array
+        return '_ssim'
+      end
+    else
+      if obj.is_a?(String)
+        return '_ssi'
+      elsif obj.is_a?(TrueClass) || obj.is_a?(FalseClass)
+        return '_bsi'
+      elsif obj.is_a?(Fixnum)
+        return '_isi'
+      else
+        raise UriService::UnsupportedObjectTypeError, "Unable to determine solr suffix for unsupported object type."
+      end
+    end
+  end
+  
   # Index the DB row term data into solr
-  def send_term_to_solr(term_row_data_from_db, commit=true)
-    
+  def send_term_to_solr(vocabulary_string_key, value, term_uri, additional_fields, is_local, commit=true)
+    doc = create_term_solr_doc(vocabulary_string_key, value, term_uri, additional_fields, is_local)
     @rsolr_pool.with do |rsolr|
-      rsolr.add(term_db_row_to_solr_doc(term_row_data_from_db))
+      rsolr.add(doc)
       rsolr.commit if commit
     end
   end
   
   # Validates additional_fields and verifies that no reserved words are supplied
   def validate_additional_fields(additional_fields)
-    reserved_keys = ['is_local', 'uri', 'value', 'vocabulary_string_key']
     additional_fields.each do |key, value|
-      if reserved_keys.include?(key.to_s)
+      if CORE_FIELD_NAMES.include?(key.to_s)
         raise UriService::InvalidAdditionalFieldKeyError, "Cannot supply the key \"#{key.to_s}\" as an additional field because it is a reserved key."
       end
-      unless key =~ ALPHANUMERIC_UNDERSCORE_KEY_REGEX
+      unless key.to_s =~ ALPHANUMERIC_UNDERSCORE_KEY_REGEX
         raise UriService::InvalidAdditionalFieldKeyError, "Invalid key (can only include lower case letters, numbers or underscores, but cannot start with an underscore): " + key
       end
     end
@@ -222,8 +245,16 @@ class UriService::Client
   def term_solr_doc_to_term_hash(term_solr_doc)
     term_hash = {}
     term_solr_doc.each do |key, value|
-      next if ['_version_', 'timestamp', 'score'].include?(key) # Skip certain automatically added fields that we don't care about
-      term_hash[key.gsub(/_[^_]+$/, '')] = value # Remove trailing '_si', '_bi', etc. if present
+      # Skip certain automatically added fields that aren't part of the term_hash
+      next if ['_version_', 'timestamp', 'score'].include?(key)
+      
+      if CORE_FIELD_NAMES.include?(key)
+        term_hash[key] = value
+      else
+        # Remove trailing '_si', '_bi', etc. if present for solr-suffixed fields
+        term_hash[key.gsub(/_[^_]+$/, '')] = value
+      end
+      
     end
     return term_hash
   end
@@ -234,7 +265,7 @@ class UriService::Client
       
       solr_params = {
         :q => value_query == '' ? '*' : UriService.solr_escape(value_query),
-        :fq => 'vocabulary_string_key_ssi:' + UriService.solr_escape(vocabulary_string_key),
+        :fq => 'vocabulary_string_key:' + UriService.solr_escape(vocabulary_string_key),
         :rows => limit,
         :start => start
       }
@@ -280,39 +311,30 @@ class UriService::Client
     end
   end
   
-  def update_term_value(term_uri, value)
-    self.update_term_impl(term_uri, value, {}, true)
-  end
-  
-  def update_term_additional_fields(term_uri, additional_fields, merge=false)
-    self.update_term_impl(term_uri, nil, additional_fields, merge)
-  end
-  
-  def update_term_impl(term_uri, value, additional_fields, merge_additional_fields)
-    
+  # opts format: {:value => 'new value', :additional_fields => {'key' => 'value'}}
+  def update_term(term_uri, opts, merge_additional_fields=true)
     dataset = @db[UriService::TERMS].where(uri: term_uri)
     raise UriService::NonExistentUriError, "No term found with uri: " + term_uri if dataset.count == 0
-    validate_additional_fields(additional_fields)
       
-    term = dataset.first
-    term_additional_fields = term['additional_fields'].nil? ? {} : JSON.parse(term['additional_fields'])
+    term_db_row = dataset.first
     
-    if merge_additional_fields
-      term_additional_fields.merge!(additional_fields)
-      term_additional_fields.delete_if { |k, v| v.nil? } # Delete nil values. This is a way to clear data in additional_fields.
-    else
-      term_additional_fields = additional_fields
+    new_value = opts[:value] || term_db_row[:value]
+    new_additional_fields = term_db_row[:additional_fields].nil? ? {} : JSON.parse(term_db_row[:additional_fields])
+    
+    unless opts[:additional_fields].nil?
+      if merge_additional_fields
+        new_additional_fields.merge!(opts[:additional_fields])
+        new_additional_fields.delete_if { |k, v| v.nil? } # Delete nil values. This is a way to clear data in additional_fields.
+      else
+        new_additional_fields = opts[:additional_fields]
+      end
     end
-    
-    new_data = {}
-    new_data[:value] = value unless value.nil?
-    new_data[:additional_fields] = JSON.generate(term_additional_fields)
+    validate_additional_fields(new_additional_fields)
     
     @db.transaction do
-      dataset.update(new_data)
-      self.send_term_to_solr(@db[UriService::TERMS].where(uri: term_uri).first)
+      dataset.update(value: new_value, additional_fields: JSON.generate(new_additional_fields))
+      self.send_term_to_solr(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
     end
-    
   end
   
 end
@@ -325,3 +347,4 @@ class UriService::ExistingUriError < StandardError;end
 class UriService::ExistingVocabularyStringKeyError < StandardError;end
 class UriService::NonExistentUriError < StandardError;end
 class UriService::NonExistentVocabularyError < StandardError;end
+class UriService::UnsupportedObjectTypeError < StandardError;end

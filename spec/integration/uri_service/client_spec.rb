@@ -135,7 +135,12 @@ describe UriService::Client, type: :integration do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           expect {
+            # Invalid URI structure
             UriService.client.create_term_impl(vocabulary_string_key, 'zzz', "Hey, that's not a URI!", {}, false)
+          }.to raise_error(UriService::InvalidUriError)
+          expect {
+            # URL without protocol
+            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', "something.example.com", {}, false)
           }.to raise_error(UriService::InvalidUriError)
         end
         it "rejects invalid additional_fields keys (which can only contain lower case letters, numbers and underscores, but cannot start with an underscore)" do
@@ -204,9 +209,11 @@ describe UriService::Client, type: :integration do
       
       describe "#create_local_term" do
         it "creates a new, valid URI for the local term (by not throwing an invalid URI error)" do
+          vocabulary_string_key = 'names'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           expect {
             UriService.client.create_local_term(vocabulary_string_key, 'Good old fashioned value')
-          }.not_to raise_error(UriService::InvalidAdditionalFieldKeyError)
+          }.not_to raise_error
         end
         it "delegates work appropriately to the create_term_impl method, thereby creating a new term" do
           vocabulary_string_key = 'names'
@@ -244,24 +251,76 @@ describe UriService::Client, type: :integration do
       end
     end
     
-    describe "#term_db_row_to_solr_doc" do
+    describe "#create_term_solr_doc" do
       it "converts as expected" do
-        term_db_row = {
-          :uri => 'http://id.library.columbia.edu/term/1234567',
-          :value => 'What a great value',
-          :is_local => false,
-          :vocabulary_string_key => 'some_vocabulary',
-          :additional_fields => JSON.generate({'custom_field1' => 'custom value 1', 'custom_field2' => 'custom value 2'})
+        uri = 'http://id.library.columbia.edu/term/1234567'
+        value = 'What a great value'
+        is_local = false
+        vocabulary_string_key = 'some_vocabulary'
+        additional_fields = {
+          'field1' => 'string value',
+          'field2' => 1,
+          'field3' => true,
+          'field4' => ['val1', 'val2'],
+          'field5' => [1, 2, 3, 4, 5]
         }
+        
         expected_solr_doc = {
           'uri' => 'http://id.library.columbia.edu/term/1234567',
           'value' => 'What a great value',
-          'is_local_bsi' => false,
-          'vocabulary_string_key_ssi' => 'some_vocabulary',
-          'custom_field1_ssi' => 'custom value 1',
-          'custom_field2_ssi' => 'custom value 2'
+          'is_local' => false,
+          'vocabulary_string_key' => 'some_vocabulary',
+          'field1_ssi' => 'string value',
+          'field2_isi' => 1,
+          'field3_bsi' => true,
+          'field4_ssim' => ['val1', 'val2'],
+          'field5_isim' => [1, 2, 3, 4, 5]
         }
-        expect(UriService.client.term_db_row_to_solr_doc(term_db_row)).to eq(expected_solr_doc)
+        
+        expect(UriService.client.create_term_solr_doc(
+          vocabulary_string_key, value, uri, additional_fields, is_local
+        )).to eq(expected_solr_doc)
+      end
+    end
+    
+    describe "#send_term_to_solr" do
+      it "correctly creates/updates a document in solr" do
+        vocabulary_string_key = 'names'
+        value = 'Grrrrreat name!'
+        uri = 'http://id.loc.gov/123'
+        additional_fields = {'field1' => 1, 'field2' => ['aaa', 'bbb', 'ccc']}
+        is_local = false
+        
+        expected1 = {
+          'uri' => uri,
+          'value' => value,
+          'vocabulary_string_key' => vocabulary_string_key,
+          'is_local' => is_local,
+          'field1_isi' => additional_fields['field1'],
+          'field2_ssim' => additional_fields['field2']
+        }
+        
+        expected2 = {
+          'uri' => uri,
+          'value' => 'Even grrrreater value!',
+          'vocabulary_string_key' => vocabulary_string_key,
+          'is_local' => is_local,
+          'field1_isi' => additional_fields['field1'],
+          'field2_ssim' => additional_fields['field2']
+        }
+        
+        UriService.client.send_term_to_solr(vocabulary_string_key, value, uri, additional_fields, is_local)
+        UriService.client.rsolr_pool.with do |rsolr|
+          response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
+          doc = response['response']['docs'][0]
+          expect(doc.except('score', 'timestamp', '_version')).to eq(expected1)
+        end
+        UriService.client.send_term_to_solr(vocabulary_string_key, 'Even grrrreater value!', uri, additional_fields, is_local)
+        UriService.client.rsolr_pool.with do |rsolr|
+          response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
+          doc = response['response']['docs'][0]
+          expect(doc.except('score', 'timestamp', '_version')).to eq(expected2)
+        end
       end
     end
     
@@ -489,36 +548,89 @@ describe UriService::Client, type: :integration do
     end
     
     context "term update methods" do
-      describe "#update_term_value" do
+      
+      describe "#update_term" do
+        it "properly updates both the database and solr" do
+          vocabulary_string_key = 'names'
+          uri = 'http://id.library.columbia.edu/term/1234567'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          UriService.client.create_term(vocabulary_string_key, 'My term', uri, {})
+          expect(UriService.client.db[UriService::TERMS].where(uri: uri).count).to eq(1)
+          UriService.client.rsolr_pool.with do |rsolr|
+            response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
+            expect(response['response']['numFound']).to eq(1)
+          end
+          
+          new_value = 'updated value'
+          new_additional_fields = {'updated' => true, 'cool' => 'very'}
+          UriService.client.update_term(uri, {value: new_value, additional_fields: new_additional_fields}, false)
+          
+          db_row = UriService.client.db[UriService::TERMS].where(uri: uri).first
+          doc = nil
+          UriService.client.rsolr_pool.with do |rsolr|
+            response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
+            doc = response['response']['docs'].first
+          end
+          
+          expect(db_row.except(:id)).to eq({
+            :vocabulary_string_key => 'names',
+            :value => new_value,
+            :uri => "http://id.library.columbia.edu/term/1234567",
+            :uri_hash => "7dbe84657ed648d1748cb03d862cd4a45e590037bc4c2fcdbd04062ef4be226f",
+            :is_local => false,
+            :additional_fields => JSON.generate(new_additional_fields)
+          })
+          expect(doc.except('timestamp', '_version_', 'score')).to eq({
+            "vocabulary_string_key" => "names",
+            "value" => "updated value",
+            "uri" => "http://id.library.columbia.edu/term/1234567",
+            "is_local" => false,
+            "updated_bsi" => true,
+            "cool_ssi" => "very"
+          })
+        end
         it "raises an exception when trying to update a term that does not exist" do
           expect {
-            UriService.client.update_term_value('http://this.does.not.exist/really/does/not', 'New Value')
+            UriService.client.update_term('http://this.does.not.exist/really/does/not', {value: 'New Value'})
           }.to raise_error(UriService::NonExistentUriError)
         end
-        it "can update the value of an existing term" do
+        it "can update the value and additional_fields for an existing term" do
           vocabulary_string_key = 'names'
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           UriService.client.create_term(vocabulary_string_key, 'Original Value', uri)
           expect(UriService.client.find_term_by_uri(uri)['value']).to eq('Original Value')
-          UriService.client.update_term_value(uri, 'New Value')
-          expect(UriService.client.find_term_by_uri(uri)['value']).to eq('New Value')
+          UriService.client.update_term(uri, {value: 'New Value', additional_fields: {'new_field' => 'new field value'}})
+          term = UriService.client.find_term_by_uri(uri)
+          expect(term['value']).to eq('New Value')
+          expect(term['new_field']).to eq('new field value')
         end
-      end
-      describe "#update_term_additional_fields" do
         it "rejects invalid additional_fields keys (which can only contain lower case letters, numbers and underscores, but cannot start with an underscore)" do
           vocabulary_string_key = 'names'
+          uri = "http://id.library.columbia.edu/term/111"
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          UriService.client.create_term(vocabulary_string_key, 'Value', uri, {'valid_key' => 'cool value'})
           ['invalid key', '_invalid', 'Invalid', '???invalid'].each_with_index do |invalid_key, index|
             expect {
-              UriService.client.create_term(vocabulary_string_key, 'Value', "http://id.library.columbia.edu/term/#{index}", {invalid_key => 'cool value'})  
+              UriService.client.update_term(uri, {additional_fields: {invalid_key => 'some value'}})
             }.to raise_error(UriService::InvalidAdditionalFieldKeyError)
           end
         end
         it "raises an exception when trying to update a term that does not exist" do
           expect {
-            UriService.client.update_term_additional_fields('http://this.does.not.exist/really/does/not', {'something' => 'here'})
+            UriService.client.update_term('http://this.does.not.exist/really/does/not', {additional_fields: {'something' => 'here'}})
           }.to raise_error(UriService::NonExistentUriError)
+        end
+        it "merges supplied additional fields for a regular term when merge param is not supplied (because merge defaults to true)" do
+          vocabulary_string_key = 'names'
+          uri = 'http://id.library.columbia.edu/term/1234567'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          UriService.client.create_term(vocabulary_string_key, 'Original Value', uri, {'some_key' => 'some val'})
+          expect(UriService.client.find_term_by_uri(uri)['some_key']).to eq('some val')
+          UriService.client.update_term(uri, {additional_fields: {'another_key' => 'another val'}})
+          term = UriService.client.find_term_by_uri(uri)
+          expect(term['some_key']).to eq('some val')
+          expect(term['another_key']).to eq('another val')
         end
         it "can replace all of the additional fields for a regular term when merge param equals false" do
           vocabulary_string_key = 'names'
@@ -526,11 +638,26 @@ describe UriService::Client, type: :integration do
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           UriService.client.create_term(vocabulary_string_key, 'Original Value', uri, {'some_key' => 'some val'})
           expect(UriService.client.find_term_by_uri(uri)['some_key']).to eq('some val')
-          UriService.client.update_term_additional_fields(uri, {'new_key' => 'new val'}, false)
-          expect(UriService.client.find_term_by_uri(uri)['some_key']).to be_nil
-          expect(UriService.client.find_term_by_uri(uri)['new_key']).to eq('new val')
+          UriService.client.update_term(uri, {additional_fields: {'another_key' => 'another val'}}, false)
+          term = UriService.client.find_term_by_uri(uri)
+          expect(term['some_key']).to be_nil
+          expect(term['another_key']).to eq('another val')
         end
       end
+    end
+  end
+  
+  describe "::get_solr_suffix_for_object" do
+    it "creates the expected suffixes for supported object types" do
+      expect(UriService::Client::get_solr_suffix_for_object( 'string value'   )).to eq('_ssi')
+      expect(UriService::Client::get_solr_suffix_for_object( 1                )).to eq('_isi')
+      expect(UriService::Client::get_solr_suffix_for_object( true             )).to eq('_bsi')
+      expect(UriService::Client::get_solr_suffix_for_object( ['val1', 'val2'] )).to eq('_ssim')
+      expect(UriService::Client::get_solr_suffix_for_object( [1, 2, 3, 4, 5]  )).to eq('_isim')
+    end
+  
+    it "raises an exception for unsupported object types" do
+      expect{ UriService::Client::get_solr_suffix_for_object(Struct.new(:something)) }.to raise_error(UriService::UnsupportedObjectTypeError)
     end
   end
 

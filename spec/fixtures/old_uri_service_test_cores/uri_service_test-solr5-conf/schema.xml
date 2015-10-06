@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<schema name="UriService" version="1.0">
+<schema name="UriService" version="1.5">
   
   <uniqueKey>uri</uniqueKey>
   
@@ -9,11 +9,9 @@
   <field name="_version_" type="long" indexed="true" stored="true"/>
        
   <!-- Main fields -->
-  <field name="uri"                     type="string" stored="true" indexed="true" multiValued="false" required="true"/>
-  <field name="value" 									type="string" stored="true" indexed="true" multiValued="false" required="true"/>
-  <field name="vocabulary_string_key" 	type="string" stored="true" indexed="true" multiValued="false" required="true"/>
-  <field name="is_local" 								type="boolean" stored="true" indexed="true" multiValued="false" required="true"/>
-  <field name="timestamp" 							type="date" indexed="true" stored="true" default="NOW" multiValued="false"/>
+  <field name="uri" type="string" stored="true" indexed="true" multiValued="false" required="true"/>
+  <field name="value" type="string" stored="true" indexed="true" multiValued="false" required="true"/>
+  <field name="timestamp" type="date" indexed="true" stored="true" default="NOW" multiValued="false"/>
   
   <!-- Suggest fields -->
   <dynamicField name="*_suggest" type="text_suggest" stored="false" indexed="true" multiValued="false"/>

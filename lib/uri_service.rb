@@ -1,4 +1,4 @@
-require 'active_support/inflector'
+require 'active_support/all'
 require 'connection_pool'
 require 'rsolr'
 require 'sequel'
