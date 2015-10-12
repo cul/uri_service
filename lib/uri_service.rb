@@ -21,7 +21,6 @@ module UriService
     end
     
     @client = UriService::Client.new(opts)
-    @client.test_connection
   end
 
   def self.client
