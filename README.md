@@ -118,6 +118,13 @@ Create a vocabulary:
 UriService.client.create_vocabulary('names', 'Names')
 ```
 
+Listing vocabularies:
+```ruby
+limit = 10
+start = 0
+UriService.client.list_vocabularies(limit, start)
+```
+
 Create a term in a vocabulary:
 ```ruby
 # Creates a term in the 'names' vocabulary, using the given value, uri and a couple of custom key-value pairs
@@ -132,7 +139,7 @@ Create a LOCAL term in a vocabulary (when you don't have a URI for your term):
 UriService.client.create_local_term('names', 'Baby, Newborn', {'is_baby' => true})
 ```
 
-Find a term in a vocabulary (after you've already added the term to the vocabulary):
+Searching by string query for a term in a vocabulary:
 ```ruby
 UriService.client.find_terms_by_query('names', 'batman')
 # =>
@@ -150,6 +157,13 @@ UriService.client.find_terms_by_query('names', 'batman')
 #     'is_local' => false
 #   },
 # ]
+```
+
+Listing terms in a vocabulary:
+```ruby
+limit = 10
+start = 0
+UriService.client.list_terms('names', limit, start)
 ```
 
 ### Running Integration Tests (for developers):
