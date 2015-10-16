@@ -249,7 +249,7 @@ class UriService::Client
   end
   
   def find_term_by_uri(uri)
-    UriService.client.rsolr_pool.with do |rsolr|
+    @rsolr_pool.with do |rsolr|
       response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + UriService.solr_escape(uri) })
       if response['response']['numFound'] == 1
         return term_solr_doc_to_frozen_term_hash(response['response']['docs'].first)
@@ -279,17 +279,55 @@ class UriService::Client
   end
   
   def find_terms_by_query(vocabulary_string_key, value_query, limit=10, start=0)
+    
+    if value_query.blank?
+      return self.list_terms(vocabulary_string_key, limit, start)
+    end
+    
     terms_to_return = []
-    UriService.client.rsolr_pool.with do |rsolr|
+    @rsolr_pool.with do |rsolr|
       
       solr_params = {
-        :q => value_query == '' ? '*' : UriService.solr_escape(value_query),
+        :q => UriService.solr_escape(value_query),
         :fq => 'vocabulary_string_key:' + UriService.solr_escape(vocabulary_string_key),
         :rows => limit,
         :start => start
       }
       
       response = rsolr.get('suggest', params: solr_params)
+      if response['response']['numFound'] > 0
+        response['response']['docs'].each do |doc|
+          terms_to_return << term_solr_doc_to_frozen_term_hash(doc)
+        end
+      end
+    end
+    return terms_to_return
+  end
+  
+  ################
+  # List methods #
+  ################
+  
+  # Lists vocabularies alphabetically (by string key) and supports paging through results.
+  def list_vocabularies(limit=10, start=0)
+    db_rows = @db[UriService::VOCABULARIES].order(:string_key).limit(limit, start)
+    return db_rows.map{|row| row.except(:id).stringify_keys!}
+  end
+  
+  # Lists terms alphabetically and supports paging through results.
+  # Useful for browsing through a term list without a query.
+  def list_terms(vocabulary_string_key, limit=10, start=0)
+    terms_to_return = []
+    @rsolr_pool.with do |rsolr|
+      
+      solr_params = {
+        :fq => 'vocabulary_string_key:' + UriService.solr_escape(vocabulary_string_key),
+        :sort => 'value_ssort asc',
+        :rows => limit,
+        :start => start
+      }
+      
+      response = rsolr.get('select', params: solr_params)
       if response['response']['numFound'] > 0
         response['response']['docs'].each do |doc|
           terms_to_return << term_solr_doc_to_frozen_term_hash(doc)
