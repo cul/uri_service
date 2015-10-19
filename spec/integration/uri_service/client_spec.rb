@@ -422,7 +422,6 @@ describe UriService::Client, type: :integration do
       end
     end
     
-    
     describe "#find_terms_by_query" do
       
       it "delegates to #list_terms and returns a list of alphabetically terms when the supplied query is blank" do
@@ -846,6 +845,36 @@ describe UriService::Client, type: :integration do
         'field4' => ['one', 'two', 'three'],
         'field5' => [1, 2, 3]
       })
+    end
+  end
+  
+  describe "#reindex_all_terms" do
+    it "works as expected" do
+      
+      vocabulary_string_key = 'names'
+      UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+      
+      UriService.client.create_term(vocabulary_string_key, 'Bob', 'http://id.loc.gov/fake/111')
+      UriService.client.create_term(vocabulary_string_key, 'Prometheus', 'http://id.loc.gov/fake/222')
+      
+      expected_search_results = [
+        {'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Bob', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+        {'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Prometheus', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+      ]
+      
+      expect(UriService.client.list_terms(vocabulary_string_key)).to eq(expected_search_results)
+      
+      # Clear Solr index
+      UriService.client.rsolr_pool.with do |rsolr|
+        rsolr.delete_by_query('*:*')
+        rsolr.commit
+      end
+      
+      expect(UriService.client.list_terms(vocabulary_string_key)).to eq([])
+      
+      # Reindex
+      UriService.client.reindex_all_terms()
+      expect(UriService.client.list_terms(vocabulary_string_key)).to eq(expected_search_results)
     end
   end
   

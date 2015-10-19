@@ -21,6 +21,39 @@ class UriService::Client
     @rsolr_pool = ConnectionPool.new( size: opts['solr']['pool_size'], timeout: (opts['solr']['pool_timeout'].to_f/1000.to_f) ) { RSolr.connect(:url => opts['solr']['url']) }
   end
   
+  def reindex_all_terms(print_progress_to_console=false)
+    self.handle_database_disconnect do
+      
+      if print_progress_to_console
+        puts "Getting database term count..."
+        total = @db[UriService::TERMS].count
+        reindex_counter = 0
+        puts "Number of terms to index: #{total.to_s}"
+        puts ""
+      end
+      
+      # Need to use unambiguous order when using paged_each
+      @db[UriService::TERMS].order(:id).paged_each(:rows_per_fetch=>100) do |term_db_row|
+        self.send_term_to_solr(
+          term_db_row[:vocabulary_string_key],
+          term_db_row[:value],
+          term_db_row[:uri],
+          JSON.parse(term_db_row[:additional_fields]),
+          term_db_row[:is_local],
+        false)
+        
+        if print_progress_to_console
+          reindex_counter += 1
+          print "\rIndexed #{reindex_counter.to_s} of #{total.to_s}"
+        end
+      end
+      
+      puts "\n" + "Committing solr updates..." if print_progress_to_console
+      self.do_solr_commit
+      puts "Done." if print_progress_to_console
+    end
+  end
+  
   def disconnect!
     unless @db.nil?
       db_reference = @db
@@ -60,30 +93,34 @@ class UriService::Client
   end
   
   def create_required_tables
-    current_tables = @db.tables
+    self.handle_database_disconnect do
     
-    unless current_tables.include?(UriService::VOCABULARIES)
-      @db.create_table UriService::VOCABULARIES do |t|
-        primary_key :id
-        String :string_key, size: 255, index: true, unique: true
-        String :display_label, size: 255
+      current_tables = @db.tables
+      
+      unless current_tables.include?(UriService::VOCABULARIES)
+        @db.create_table UriService::VOCABULARIES do |t|
+          primary_key :id
+          String :string_key, size: 255, index: true, unique: true
+          String :display_label, size: 255
+        end
+      else
+        puts 'Skipped creation of table ' + UriService::VOCABULARIES.to_s + ' because it already exists.'
       end
-    else
-      puts 'Skipped creation of table ' + UriService::VOCABULARIES.to_s + ' because it already exists.'
-    end
-    
-    unless current_tables.include?(UriService::TERMS)
-      @db.create_table UriService::TERMS do |t|
-        primary_key :id
-        String :vocabulary_string_key, size: 255, index: true
-        String :uri, text: true # This needs to be a text field because utf8 strings cannot be our desired 2000 characters long in MySQL. uri_hash will be used to verify uniqueness.
-        String :uri_hash, fixed: true, size: 64, unique: true
-        String :value, text: true
-        TrueClass :is_local, default: false
-        String :additional_fields, text: true
+      
+      unless current_tables.include?(UriService::TERMS)
+        @db.create_table UriService::TERMS do |t|
+          primary_key :id
+          String :vocabulary_string_key, size: 255, index: true
+          String :uri, text: true # This needs to be a text field because utf8 strings cannot be our desired 2000 characters long in MySQL. uri_hash will be used to verify uniqueness.
+          String :uri_hash, fixed: true, size: 64, unique: true
+          String :value, text: true
+          TrueClass :is_local, default: false
+          String :additional_fields, text: true
+        end
+      else
+        puts 'Skipped creation of table ' + UriService::TERMS.to_s + ' because it already exists.'
       end
-    else
-      puts 'Skipped creation of table ' + UriService::TERMS.to_s + ' because it already exists.'
+      
     end
   end
   
@@ -418,6 +455,12 @@ class UriService::Client
     rescue Sequel::DatabaseDisconnectError
       tries -= 1
       retry unless tries == 0
+    end
+  end
+  
+  def do_solr_commit
+    @rsolr_pool.with do |rsolr|
+      rsolr.commit
     end
   end
   
