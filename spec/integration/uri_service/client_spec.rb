@@ -478,6 +478,24 @@ describe UriService::Client, type: :integration do
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'What a great value')).to eq(expected_search_results)
       end
       
+      it "can do exact matching when a complete URI is given as a query, but does not match on an incomplete uri (with the last character chopped off)" do
+        vocabulary_string_key = 'names'
+        uri = 'http://id.library.columbia.edu/term/1234567'
+        value = 'What a great value'
+        UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+        UriService.client.create_term(vocabulary_string_key, value, uri)
+        
+        expected_search_results = [{
+          'uri' => uri,
+          'value' => value,
+          'vocabulary_string_key' => vocabulary_string_key,
+          'is_local' => false
+        }]
+        
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, uri[0...(uri.length-1)])).not_to eq(expected_search_results)
+        expect(UriService.client.find_terms_by_query(vocabulary_string_key, uri)).to eq(expected_search_results)
+      end
+      
       it "sorts exact matches first" do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')

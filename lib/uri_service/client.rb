@@ -92,22 +92,23 @@ class UriService::Client
   ##################
   
   def create_vocabulary(string_key, display_label)
-    if string_key.to_s == 'all'
-      # Note: There isn't currently a use case for searching across 'all' vocabularies, but I'm leaving this restriction as a placeholder in case that changes.
-      raise UriService::InvalidVocabularyStringKeyError, 'The value "all" is a reserved word and cannot be used as the string_key value for a vocabulary.'
-    end
-    unless string_key =~ ALPHANUMERIC_UNDERSCORE_KEY_REGEX
-      raise UriService::InvalidVocabularyStringKeyError, "Invalid key (can only include lower case letters, numbers or underscores, but cannot start with an underscore): " + string_key
-    end
-    
-    @db.transaction do
-      begin
-        @db[UriService::VOCABULARIES].insert(string_key: string_key, display_label: display_label)
-      rescue Sequel::UniqueConstraintViolation
-        raise UriService::ExistingVocabularyStringKeyError, "A vocabulary already exists with string key: " + string_key
+    self.handle_database_disconnect do
+      if string_key.to_s == 'all'
+        # Note: There isn't currently a use case for searching across 'all' vocabularies, but I'm leaving this restriction as a placeholder in case that changes.
+        raise UriService::InvalidVocabularyStringKeyError, 'The value "all" is a reserved word and cannot be used as the string_key value for a vocabulary.'
+      end
+      unless string_key =~ ALPHANUMERIC_UNDERSCORE_KEY_REGEX
+        raise UriService::InvalidVocabularyStringKeyError, "Invalid key (can only include lower case letters, numbers or underscores, but cannot start with an underscore): " + string_key
+      end
+      
+      @db.transaction do
+        begin
+          @db[UriService::VOCABULARIES].insert(string_key: string_key, display_label: display_label)
+        rescue Sequel::UniqueConstraintViolation
+          raise UriService::ExistingVocabularyStringKeyError, "A vocabulary already exists with string key: " + string_key
+        end
       end
     end
-    
   end
   
   # Creates a new term.
@@ -136,35 +137,37 @@ class UriService::Client
   end
   
   def create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, is_local)
+    self.handle_database_disconnect do
     
-    additional_fields.stringify_keys!
-    
-    #Ensure that vocabulary with vocabulary_string_key exists
-    if self.find_vocabulary(vocabulary_string_key).nil?
-      raise UriService::NonExistentVocabularyError, "There is no vocabulary with string key: " + vocabulary_string_key
-    end
-    unless term_uri =~ VALID_URI_REGEX
-      raise UriService::InvalidUriError, "Invalid URI supplied: #{term_uri}, with result #{(VALID_URI_REGEX.match(term_uri)).to_s}"
-    end
-    validate_additional_fields(additional_fields) # This method call raises an error if an invalid additional_field key is supplied
-    
-    @db.transaction do
-      begin
-        @db[UriService::TERMS].insert(
-          is_local: is_local,
-          uri: term_uri,
-          uri_hash: Digest::SHA256.hexdigest(term_uri),
-          value: value,
-          vocabulary_string_key: vocabulary_string_key,
-          additional_fields: JSON.generate(additional_fields)
-        )
-        send_term_to_solr(vocabulary_string_key, value, term_uri, additional_fields, is_local)
-      rescue Sequel::UniqueConstraintViolation
-        raise UriService::ExistingUriError, "A term already exists with uri: " + term_uri + " (conflict found via uri_hash check)"
+      additional_fields.stringify_keys!
+      
+      #Ensure that vocabulary with vocabulary_string_key exists
+      if self.find_vocabulary(vocabulary_string_key).nil?
+        raise UriService::NonExistentVocabularyError, "There is no vocabulary with string key: " + vocabulary_string_key
       end
+      unless term_uri =~ VALID_URI_REGEX
+        raise UriService::InvalidUriError, "Invalid URI supplied: #{term_uri}, with result #{(VALID_URI_REGEX.match(term_uri)).to_s}"
+      end
+      validate_additional_fields(additional_fields) # This method call raises an error if an invalid additional_field key is supplied
+      
+      @db.transaction do
+        begin
+          @db[UriService::TERMS].insert(
+            is_local: is_local,
+            uri: term_uri,
+            uri_hash: Digest::SHA256.hexdigest(term_uri),
+            value: value,
+            vocabulary_string_key: vocabulary_string_key,
+            additional_fields: JSON.generate(additional_fields)
+          )
+          send_term_to_solr(vocabulary_string_key, value, term_uri, additional_fields, is_local)
+        rescue Sequel::UniqueConstraintViolation
+          raise UriService::ExistingUriError, "A term already exists with uri: " + term_uri + " (conflict found via uri_hash check)"
+        end
+      end
+      
+      return generate_frozen_term_hash(vocabulary_string_key, value, term_uri, additional_fields, is_local)
     end
-    
-    return generate_frozen_term_hash(vocabulary_string_key, value, term_uri, additional_fields, is_local)
   end
   
   def generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, is_local)
@@ -245,7 +248,9 @@ class UriService::Client
   ################
   
   def find_vocabulary(vocabulary_string_key)
-    @db[UriService::VOCABULARIES].where(string_key: vocabulary_string_key).first
+    self.handle_database_disconnect do
+      @db[UriService::VOCABULARIES].where(string_key: vocabulary_string_key).first
+    end
   end
   
   def find_term_by_uri(uri)
@@ -310,8 +315,10 @@ class UriService::Client
   
   # Lists vocabularies alphabetically (by string key) and supports paging through results.
   def list_vocabularies(limit=10, start=0)
-    db_rows = @db[UriService::VOCABULARIES].order(:string_key).limit(limit, start)
-    return db_rows.map{|row| row.except(:id).stringify_keys!}
+    self.handle_database_disconnect do
+      db_rows = @db[UriService::VOCABULARIES].order(:string_key).limit(limit, start)
+      return db_rows.map{|row| row.except(:id).stringify_keys!}
+    end
   end
   
   # Lists terms alphabetically and supports paging through results.
@@ -342,15 +349,19 @@ class UriService::Client
   ##################
   
   def delete_vocabulary(vocabulary_string_key)
-    @db[UriService::VOCABULARIES].where(string_key: vocabulary_string_key).delete
+    self.handle_database_disconnect do
+      @db[UriService::VOCABULARIES].where(string_key: vocabulary_string_key).delete
+    end
   end
   
   def delete_term(term_uri, commit=true)
-    @db.transaction do
-      @db[UriService::TERMS].where(uri: term_uri).delete
-      @rsolr_pool.with do |rsolr|
-        rsolr.delete_by_query('uri:' + UriService.solr_escape(term_uri))
-        rsolr.commit if commit
+    self.handle_database_disconnect do
+      @db.transaction do
+        @db[UriService::TERMS].where(uri: term_uri).delete
+        @rsolr_pool.with do |rsolr|
+          rsolr.delete_by_query('uri:' + UriService.solr_escape(term_uri))
+          rsolr.commit if commit
+        end
       end
     end
   end
@@ -360,40 +371,54 @@ class UriService::Client
   ##################
   
   def update_vocabulary(string_key, new_display_label)
-    dataset = @db[UriService::VOCABULARIES].where(string_key: string_key)
-    raise UriService::NonExistentVocabularyError, "No vocabulary found with string_key: " + string_key if dataset.count == 0
-    
-    @db.transaction do
-      dataset.update(display_label: new_display_label)
+    self.handle_database_disconnect do
+      dataset = @db[UriService::VOCABULARIES].where(string_key: string_key)
+      raise UriService::NonExistentVocabularyError, "No vocabulary found with string_key: " + string_key if dataset.count == 0
+      
+      @db.transaction do
+        dataset.update(display_label: new_display_label)
+      end
     end
   end
   
   # opts format: {:value => 'new value', :additional_fields => {'key' => 'value'}}
   def update_term(term_uri, opts, merge_additional_fields=true)
-    dataset = @db[UriService::TERMS].where(uri: term_uri)
-    raise UriService::NonExistentUriError, "No term found with uri: " + term_uri if dataset.count == 0
+    self.handle_database_disconnect do
+      dataset = @db[UriService::TERMS].where(uri: term_uri)
+      raise UriService::NonExistentUriError, "No term found with uri: " + term_uri if dataset.count == 0
+        
+      term_db_row = dataset.first
       
-    term_db_row = dataset.first
-    
-    new_value = opts[:value] || term_db_row[:value]
-    new_additional_fields = term_db_row[:additional_fields].nil? ? {} : JSON.parse(term_db_row[:additional_fields])
-    
-    unless opts[:additional_fields].nil?
-      if merge_additional_fields
-        new_additional_fields.merge!(opts[:additional_fields])
-        new_additional_fields.delete_if { |k, v| v.nil? } # Delete nil values. This is a way to clear data in additional_fields.
-      else
-        new_additional_fields = opts[:additional_fields]
+      new_value = opts[:value] || term_db_row[:value]
+      new_additional_fields = term_db_row[:additional_fields].nil? ? {} : JSON.parse(term_db_row[:additional_fields])
+      
+      unless opts[:additional_fields].nil?
+        if merge_additional_fields
+          new_additional_fields.merge!(opts[:additional_fields])
+          new_additional_fields.delete_if { |k, v| v.nil? } # Delete nil values. This is a way to clear data in additional_fields.
+        else
+          new_additional_fields = opts[:additional_fields]
+        end
       end
+      validate_additional_fields(new_additional_fields)
+      
+      @db.transaction do
+        dataset.update(value: new_value, additional_fields: JSON.generate(new_additional_fields))
+        self.send_term_to_solr(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
+      end
+      
+      return generate_frozen_term_hash(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
     end
-    validate_additional_fields(new_additional_fields)
-    
-    @db.transaction do
-      dataset.update(value: new_value, additional_fields: JSON.generate(new_additional_fields))
-      self.send_term_to_solr(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
+  end
+  
+  def handle_database_disconnect
+    tries ||= 3
+    begin
+      yield
+    rescue Sequel::DatabaseDisconnectError
+      tries -= 1
+      retry unless tries == 0
     end
-    
-    return generate_frozen_term_hash(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
   end
   
 end
