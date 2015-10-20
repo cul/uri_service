@@ -248,7 +248,7 @@ describe UriService::Client, type: :integration do
           term = UriService.client.create_term(vocabulary_string_key, value, uri)
           expect(term.frozen?).to eq(true)
           expect(term['uri']).to eq(uri)
-          expect(UriService.client.find_term_by_uri(uri)).not_to be_nil
+          expect(UriService.client.find_term_by(uri: uri)).not_to be_nil
         end
         it "sets the is_local value to false" do
           vocabulary_string_key = 'names'
@@ -256,7 +256,7 @@ describe UriService::Client, type: :integration do
           value = 'What a great value'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           UriService.client.create_term(vocabulary_string_key, value, uri)
-          expect(UriService.client.find_term_by_uri(uri)['is_local']).to eq(false)
+          expect(UriService.client.find_term_by(uri: uri)['is_local']).to eq(false)
         end
       end
       
@@ -273,26 +273,35 @@ describe UriService::Client, type: :integration do
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           term = UriService.client.create_local_term(vocabulary_string_key, 'Cool local value')
           expect(term.frozen?).to eq(true)
-          expect(UriService.client.find_term_by_uri(term['uri'])).not_to be_nil
+          expect(UriService.client.find_term_by(uri: term['uri'])).not_to be_nil
         end
         it "sets the is_local value to true" do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           term = UriService.client.create_local_term(vocabulary_string_key, 'Nice term')
-          expect(UriService.client.find_term_by_uri(term['uri'])['is_local']).to eq(true)
+          expect(UriService.client.find_term_by(uri: term['uri'])['is_local']).to eq(true)
         end
       end
       
     end
     
-    describe "#find_term_by_uri" do
-      it "can find a newly created uri that includes custom additional fields" do
-        vocabulary_string_key = 'names'
-        uri = 'http://id.library.columbia.edu/term/1234567'
-        value = 'What a great value'
+    describe "#find_term_by" do
+
+      let(:vocabulary_string_key) { 'names' }
+      let(:uri) { 'http://id.library.columbia.edu/term/1234567' }
+      let(:value) { 'What a great value' }
+
+      before :example do
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
         UriService.client.create_term(vocabulary_string_key, value, uri, {'custom_field' => 'custom value'})
-        expect(UriService.client.find_term_by_uri(uri)).to eq({
+      end
+
+      it "returns nil when no results are found" do
+        expect(UriService.client.find_term_by(uri: 'http://fake.url.here/really/does/not/exist')).to eq(nil)
+      end
+      
+      it "can find a term by uri" do
+        expect(UriService.client.find_term_by(uri: uri)).to eq({
           'uri' => uri,
           'value' => value,
           'vocabulary_string_key' => vocabulary_string_key,
@@ -300,9 +309,43 @@ describe UriService::Client, type: :integration do
           'custom_field' => 'custom value'
         })
       end
-      it "returns nil for a term uri doesn't exist" do
-        expect(UriService.client.find_term_by_uri('http://fake.url.here/really/does/not/exist')).to eq(nil)
+      
+      it "can find a term by is_local" do
+        expect(UriService.client.find_term_by(is_local: false)).to eq({
+          'uri' => uri,
+          'value' => value,
+          'vocabulary_string_key' => vocabulary_string_key,
+          'is_local' => false,
+          'custom_field' => 'custom value'
+        })
       end
+      
+      it "can find a term by value" do
+        expect(UriService.client.find_term_by(value: value)).to eq({
+          'uri' => uri,
+          'value' => value,
+          'vocabulary_string_key' => vocabulary_string_key,
+          'is_local' => false,
+          'custom_field' => 'custom value'
+        })
+      end
+      
+      it "can find a term by value" do
+        expect(UriService.client.find_term_by(vocabulary_string_key: vocabulary_string_key)).to eq({
+          'uri' => uri,
+          'value' => value,
+          'vocabulary_string_key' => vocabulary_string_key,
+          'is_local' => false,
+          'custom_field' => 'custom value'
+        })
+      end
+      
+      it "raises an exception when an invalid find_by condition is supplied" do
+        expect {
+            UriService.client.find_term_by(invalid_field: 'zzz')
+          }.to raise_error(UriService::UnsupportedSearchFieldError)
+      end
+      
     end
     
     describe "#create_term_solr_doc" do
@@ -658,9 +701,9 @@ describe UriService::Client, type: :integration do
         value = 'What a great value'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
         UriService.client.create_term(vocabulary_string_key, value, uri)
-        expect(UriService.client.find_term_by_uri(uri)).not_to eq(nil)
+        expect(UriService.client.find_term_by(uri: uri)).not_to eq(nil)
         UriService.client.delete_term(uri)
-        expect(UriService.client.find_term_by_uri(uri)).to eq(nil)
+        expect(UriService.client.find_term_by(uri: uri)).to eq(nil)
       end
     end
     
@@ -671,9 +714,9 @@ describe UriService::Client, type: :integration do
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           UriService.client.create_term(vocabulary_string_key, 'Original Value', uri)
-          expect(UriService.client.find_term_by_uri(uri)['value']).to eq('Original Value')
+          expect(UriService.client.find_term_by(uri: uri)['value']).to eq('Original Value')
           UriService.client.update_term(uri, {value: 'New Value', additional_fields: {'new_field' => 'new field value'}})
-          term = UriService.client.find_term_by_uri(uri)
+          term = UriService.client.find_term_by(uri: uri)
           expect(term['value']).to eq('New Value')
           expect(term['new_field']).to eq('new field value')
         end
@@ -757,9 +800,9 @@ describe UriService::Client, type: :integration do
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           UriService.client.create_term(vocabulary_string_key, 'Original Value', uri, {'some_key' => 'some val'})
-          expect(UriService.client.find_term_by_uri(uri)['some_key']).to eq('some val')
+          expect(UriService.client.find_term_by(uri: uri)['some_key']).to eq('some val')
           UriService.client.update_term(uri, {additional_fields: {'another_key' => 'another val'}})
-          term = UriService.client.find_term_by_uri(uri)
+          term = UriService.client.find_term_by(uri: uri)
           expect(term['some_key']).to eq('some val')
           expect(term['another_key']).to eq('another val')
         end
@@ -768,9 +811,9 @@ describe UriService::Client, type: :integration do
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           UriService.client.create_term(vocabulary_string_key, 'Original Value', uri, {'some_key' => 'some val'})
-          expect(UriService.client.find_term_by_uri(uri)['some_key']).to eq('some val')
+          expect(UriService.client.find_term_by(uri: uri)['some_key']).to eq('some val')
           UriService.client.update_term(uri, {additional_fields: {'another_key' => 'another val'}}, false)
-          term = UriService.client.find_term_by_uri(uri)
+          term = UriService.client.find_term_by(uri: uri)
           expect(term['some_key']).to be_nil
           expect(term['another_key']).to eq('another val')
         end

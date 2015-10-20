@@ -290,9 +290,20 @@ class UriService::Client
     end
   end
   
-  def find_term_by_uri(uri)
+  # Finds the first term matching the specified conditions
+  def find_term_by(opts)
+    fqs = []
+    
+    # Only search on allowed fields
+    unsupported_search_fields = opts.map{|key, val| key.to_s} - CORE_FIELD_NAMES
+    raise UriService::UnsupportedSearchFieldError, "Unsupported search fields: #{unsupported_search_fields.join(', ')}" if unsupported_search_fields.present?
+    
+    opts.each do |field_name, val|
+      fqs << (field_name.to_s + ':"' + UriService.solr_escape(val.to_s) + '"')
+    end
+    
     @rsolr_pool.with do |rsolr|
-      response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + UriService.solr_escape(uri) })
+      response = rsolr.get('select', params: {:q => '*:*', :fq => fqs })
       if response['response']['numFound'] == 1
         return term_solr_doc_to_frozen_term_hash(response['response']['docs'].first)
       end
@@ -475,3 +486,4 @@ class UriService::ExistingVocabularyStringKeyError < StandardError;end
 class UriService::NonExistentUriError < StandardError;end
 class UriService::NonExistentVocabularyError < StandardError;end
 class UriService::UnsupportedObjectTypeError < StandardError;end
+class UriService::UnsupportedSearchFieldError < StandardError;end
