@@ -254,7 +254,7 @@ class UriService::Client
       elsif obj.is_a?(Fixnum)
         return '_isi'
       else
-        raise UriService::UnsupportedObjectTypeError, "Unable to determine solr suffix for unsupported object type."
+        raise UriService::UnsupportedObjectTypeError, "Unable to determine solr suffix for unsupported object type: #{obj.class.name}"
       end
     end
   end
