@@ -25,6 +25,6 @@ Gem::Specification.new do |s|
   s.add_development_dependency("mysql2", ">= 0.3.18")
   s.add_development_dependency("solr_wrapper")
   
-  s.files        = Dir["{lib}/**/*.rb", "bin/*", "LICENSE", "*.md"]
-  s.require_path = 'lib'
+  s.files        = Dir["lib/**/*.rb", "lib/tasks/**/*.rake", "bin/*", "LICENSE", "*.md"]
+  s.require_paths = ['lib']
 end
