@@ -347,7 +347,14 @@ class UriService::Client
         :start => start
       }
       
+      if value_query.length < 3
+        # For efficiency, we only do whole term matches for queries < 3 characters
+        solr_params[:qf] = 'value_suggest'
+        solr_params[:pf] = 'value_suggest'
+      end
+        
       response = rsolr.get('suggest', params: solr_params)
+      
       if response['response']['numFound'] > 0
         response['response']['docs'].each do |doc|
           terms_to_return << term_solr_doc_to_frozen_term_hash(doc)

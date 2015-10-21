@@ -483,7 +483,45 @@ describe UriService::Client, type: :integration do
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, '')).to eq(expected_search_results)
       end
       
-      it "can find a newly created value when various partial and complete queries are given (partial must be > 3 chars)" do
+      describe "does whole term match searches only for queries that are < 3 characters long" do
+        it "works for 2 character queries, and is case insensitive" do
+          vocabulary_string_key = 'names'
+          uri = 'http://id.library.columbia.edu/term/1234567'
+          value = 'Me'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          UriService.client.create_term(vocabulary_string_key, value, uri)
+          
+          expected_search_results = [{
+            'uri' => uri,
+            'value' => value,
+            'vocabulary_string_key' => vocabulary_string_key,
+            'is_local' => false
+          }]
+          
+          expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'me')).to eq(expected_search_results)
+          expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'zz')).to eq([])
+        end
+        
+        it "works for 1 character queries, and is case insensitive" do
+          vocabulary_string_key = 'names'
+          uri = 'http://id.library.columbia.edu/term/1234567'
+          value = 'I'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          UriService.client.create_term(vocabulary_string_key, value, uri)
+          
+          expected_search_results = [{
+            'uri' => uri,
+            'value' => value,
+            'vocabulary_string_key' => vocabulary_string_key,
+            'is_local' => false
+          }]
+          
+          expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'i')).to eq(expected_search_results)
+          expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'z')).to eq([])
+        end
+      end
+      
+      it "can find a newly created value when various partial and complete queries are given (partial must be >= 3 chars)" do
         vocabulary_string_key = 'names'
         uri = 'http://id.library.columbia.edu/term/1234567'
         value = 'What a great value'
