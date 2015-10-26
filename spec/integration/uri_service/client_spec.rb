@@ -187,11 +187,11 @@ describe UriService::Client, type: :integration do
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           expect {
             # Invalid URI structure
-            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', "Hey, that's not a URI!", {}, false)
+            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', "Hey, that's not a URI!", {}, false, false)
           }.to raise_error(UriService::InvalidUriError)
           expect {
             # URL without protocol
-            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', "something.example.com", {}, false)
+            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', "something.example.com", {}, false, false)
           }.to raise_error(UriService::InvalidUriError)
         end
         it "rejects invalid additional_fields keys (which can only contain lower case letters, numbers and underscores, but cannot start with an underscore)" do
@@ -199,29 +199,29 @@ describe UriService::Client, type: :integration do
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           ['invalid key', '_invalid', 'Invalid', '???invalid'].each_with_index do |invalid_key, index|
             expect {
-              UriService.client.create_term_impl(vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", {invalid_key => 'cool value'}, false)
+              UriService.client.create_term_impl(vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", {invalid_key => 'cool value'}, false, false)
             }.to raise_error(UriService::InvalidAdditionalFieldKeyError)
           end
         end
         it "raises an exception when trying to create a term in a vocabulary that has not been created" do
           vocabulary_string_key = 'nonexistent'
           expect {
-            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', 'http://id.library.columbia.edu/term/1234567', {}, false)
+            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', 'http://id.library.columbia.edu/term/1234567', {}, false, false)
           }.to raise_error(UriService::NonExistentVocabularyError)
         end
         it "raises an exception when supplying an additional field that is a reserved key" do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           expect {
-            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', 'http://id.library.columbia.edu/term/1234567', {'value' => '12345'}, false)
+            UriService.client.create_term_impl(vocabulary_string_key, 'zzz', 'http://id.library.columbia.edu/term/1234567', {'value' => '12345'}, false, false)
           }.to raise_error(UriService::InvalidAdditionalFieldKeyError)
         end
         it "raises an exception when adding more than one term with the same uri" do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_term_impl(vocabulary_string_key, 'Value 1', 'http://id.library.columbia.edu/term/1234567', {}, false)
+          UriService.client.create_term_impl(vocabulary_string_key, 'Value 1', 'http://id.library.columbia.edu/term/1234567', {}, false, false)
           expect {
-            UriService.client.create_term_impl(vocabulary_string_key, 'Value 2', 'http://id.library.columbia.edu/term/1234567', {}, false)
+            UriService.client.create_term_impl(vocabulary_string_key, 'Value 2', 'http://id.library.columbia.edu/term/1234567', {}, false, false)
           }.to raise_error(UriService::ExistingUriError)
         end
         it "successfully creates a uri entry in both the database and solr" do
@@ -229,7 +229,7 @@ describe UriService::Client, type: :integration do
           uri = 'http://id.library.columbia.edu/term/1234567'
           expect(UriService.client.db[UriService::TERMS].where(uri: uri).count).to eq(0)
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_term_impl(vocabulary_string_key, 'aaa', uri, {}, false)
+          UriService.client.create_term_impl(vocabulary_string_key, 'aaa', uri, {}, false, false)
           expect(UriService.client.db[UriService::TERMS].where(uri: uri).count).to eq(1)
           
           UriService.client.rsolr_pool.with do |rsolr|
@@ -280,6 +280,28 @@ describe UriService::Client, type: :integration do
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           term = UriService.client.create_local_term(vocabulary_string_key, 'Nice term')
           expect(UriService.client.find_term_by(uri: term['uri'])['is_local']).to eq(true)
+        end
+        it "by default, rases an error if two local terms with the same value are created within the same vocabulary" do
+          vocabulary_string_key = 'names'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          
+          value = 'Nice term'
+          
+          UriService.client.create_local_term(vocabulary_string_key, value)
+          expect { UriService.client.create_local_term(vocabulary_string_key, value) }.to raise_error(UriService::DisallowedDuplicateLocalTermValueError)
+        end
+        
+        it "allows two local terms with the same value to be created within the same vocabulary if the raise_error_if_local_term_value_exists_in_vocabulary param is passed a value of true" do
+          
+          vocab_name_1 = 'names'
+          vocab_name_2 = 'something'
+          UriService.client.create_vocabulary(vocab_name_1, 'Names')
+          UriService.client.create_vocabulary(vocab_name_2, 'Something')
+          
+          value = 'Nice term'
+          
+          UriService.client.create_local_term(vocab_name_1, value)
+          expect { UriService.client.create_local_term(vocab_name_2, value, {}, true) }.not_to raise_error
         end
       end
       
@@ -773,7 +795,7 @@ describe UriService::Client, type: :integration do
             'new_field' => 'new field value'
           })
         end
-        it "properly updates both the database and solr" do
+        it "properly updates both the database and solr, hashing the term uri and value" do
           vocabulary_string_key = 'names'
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
@@ -798,6 +820,7 @@ describe UriService::Client, type: :integration do
           expect(db_row.except(:id)).to eq({
             :vocabulary_string_key => 'names',
             :value => new_value,
+            :value_hash => '9c3868c849c38d8c8367cb29796d7d7d3378ef79a43b5e41b55bfcd15cf87f81',
             :uri => "http://id.library.columbia.edu/term/1234567",
             :uri_hash => "7dbe84657ed648d1748cb03d862cd4a45e590037bc4c2fcdbd04062ef4be226f",
             :is_local => false,

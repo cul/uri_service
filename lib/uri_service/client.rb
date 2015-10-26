@@ -114,6 +114,7 @@ class UriService::Client
           String :uri, text: true # This needs to be a text field because utf8 strings cannot be our desired 2000 characters long in MySQL. uri_hash will be used to verify uniqueness.
           String :uri_hash, fixed: true, size: 64, unique: true
           String :value, text: true
+          String :value_hash, fixed: true, size: 64
           TrueClass :is_local, default: false
           String :additional_fields, text: true
         end
@@ -150,11 +151,12 @@ class UriService::Client
   
   # Creates a new term.
   def create_term(vocabulary_string_key, value, term_uri, additional_fields={})
-    return self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, false)
+    return self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, false, false)
   end
   
   # Creates a new local term, auto-generating a URI
-  def create_local_term(vocabulary_string_key, value, additional_fields={})
+  # By default, if raise_error_if_local_term_value_exists_in_vocabulary param is true, rejects the creation of a local value if that exact value already exists in the specified vocabulary
+  def create_local_term(vocabulary_string_key, value, additional_fields={}, raise_error_if_local_term_value_exists_in_vocabulary=true)
   
     # Create a new URI for this local term, using the @local_uri_base
     term_uri = URI(@local_uri_base)
@@ -164,7 +166,7 @@ class UriService::Client
     # Getting a duplicate UUID from SecureRandom.uuid is EXTREMELY unlikely, but we'll account for it just in case (by making a few more attempts).
     5.times {
       begin
-        return self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, true)
+        return self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, true, raise_error_if_local_term_value_exists_in_vocabulary)
       rescue UriService::ExistingUriError
         raise UriService::ExistingUriError, "UriService generated a duplicate random UUID (via SecureRandom.uuid) and will now attempt to create another.  This type of problem is EXTREMELY rare."
       end
@@ -173,7 +175,7 @@ class UriService::Client
     return nil
   end
   
-  def create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, is_local)
+  def create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, is_local, raise_error_if_local_term_value_exists_in_vocabulary)
     self.handle_database_disconnect do
     
       additional_fields.stringify_keys!
@@ -188,12 +190,20 @@ class UriService::Client
       validate_additional_fields(additional_fields) # This method call raises an error if an invalid additional_field key is supplied
       
       @db.transaction do
+        
+        value_hash = Digest::SHA256.hexdigest(value)
+        
+        if raise_error_if_local_term_value_exists_in_vocabulary && @db[UriService::TERMS].where(value_hash: value_hash, vocabulary_string_key: vocabulary_string_key).count > 0
+          raise UriService::DisallowedDuplicateLocalTermValueError, "A local term already exists with the value #{value}.  This is not allowed when param raise_error_if_local_term_value_exists_in_vocabulary == true."
+        end
+        
         begin
           @db[UriService::TERMS].insert(
             is_local: is_local,
             uri: term_uri,
             uri_hash: Digest::SHA256.hexdigest(term_uri),
             value: value,
+            value_hash: value_hash,
             vocabulary_string_key: vocabulary_string_key,
             additional_fields: JSON.generate(additional_fields)
           )
@@ -303,7 +313,12 @@ class UriService::Client
     end
     
     @rsolr_pool.with do |rsolr|
-      response = rsolr.get('select', params: {:q => '*:*', :fq => fqs })
+      response = rsolr.get('select', params: {
+        :q => '*:*',
+        :fq => fqs,
+        :rows => 1,
+        :sort => 'score desc, value_ssort asc, uri asc' # For consistent sorting
+      })
       if response['response']['numFound'] == 1
         return term_solr_doc_to_frozen_term_hash(response['response']['docs'].first)
       end
@@ -344,7 +359,8 @@ class UriService::Client
         :q => UriService.solr_escape(value_query),
         :fq => 'vocabulary_string_key:' + UriService.solr_escape(vocabulary_string_key),
         :rows => limit,
-        :start => start
+        :start => start,
+        :sort => 'score desc, value_ssort asc, uri asc' # For consistent sorting
       }
       
       if value_query.length < 3
@@ -384,9 +400,9 @@ class UriService::Client
       
       solr_params = {
         :fq => 'vocabulary_string_key:' + UriService.solr_escape(vocabulary_string_key),
-        :sort => 'value_ssort asc',
         :rows => limit,
-        :start => start
+        :start => start,
+        :sort => 'value_ssort asc, uri asc' # Include 'uri asc' as part of sort to ensure consistent sorting
       }
       
       response = rsolr.get('select', params: solr_params)
@@ -458,7 +474,7 @@ class UriService::Client
       validate_additional_fields(new_additional_fields)
       
       @db.transaction do
-        dataset.update(value: new_value, additional_fields: JSON.generate(new_additional_fields))
+        dataset.update(value: new_value, value_hash: Digest::SHA256.hexdigest(new_value), additional_fields: JSON.generate(new_additional_fields))
         self.send_term_to_solr(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
       end
       
@@ -494,3 +510,4 @@ class UriService::NonExistentUriError < StandardError;end
 class UriService::NonExistentVocabularyError < StandardError;end
 class UriService::UnsupportedObjectTypeError < StandardError;end
 class UriService::UnsupportedSearchFieldError < StandardError;end
+class UriService::DisallowedDuplicateLocalTermValueError < StandardError;end
