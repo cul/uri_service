@@ -21,7 +21,7 @@ class UriService::Client
     @rsolr_pool = ConnectionPool.new( size: opts['solr']['pool_size'], timeout: (opts['solr']['pool_timeout'].to_f/1000.to_f) ) { RSolr.connect(:url => opts['solr']['url']) }
   end
   
-  def reindex_all_terms(print_progress_to_console=false)
+  def reindex_all_terms(clear=false, print_progress_to_console=false)
     self.handle_database_disconnect do
       
       if print_progress_to_console
@@ -30,6 +30,12 @@ class UriService::Client
         reindex_counter = 0
         puts "Number of terms to index: #{total.to_s}"
         puts ""
+      end
+      
+      if clear
+        @rsolr_pool.with do |rsolr|
+          rsolr.delete_by_query('*:*');
+        end
       end
       
       # Need to use unambiguous order when using paged_each

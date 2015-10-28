@@ -4,7 +4,9 @@ namespace :uri_service do
     if defined?(Rails)
       desc "Reindex all terms"
       task :reindex_all_terms => :environment do
-        UriService.client.reindex_all_terms(true)
+        clear = (ENV['CLEAR'].to_s == 'true')
+        
+        UriService.client.reindex_all_terms(clear, true)
       end
     end
     

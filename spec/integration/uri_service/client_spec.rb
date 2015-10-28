@@ -953,8 +953,7 @@ describe UriService::Client, type: :integration do
   end
   
   describe "#reindex_all_terms" do
-    it "works as expected" do
-      
+    it "can reindexing existing terms" do
       vocabulary_string_key = 'names'
       UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
       
@@ -979,6 +978,32 @@ describe UriService::Client, type: :integration do
       # Reindex
       UriService.client.reindex_all_terms()
       expect(UriService.client.list_terms(vocabulary_string_key)).to eq(expected_search_results)
+    end
+    
+    it "clears the index before reindexing if the clear param is given a value of true" do
+      vocabulary_string_key = 'names'
+      UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+      
+      UriService.client.create_term(vocabulary_string_key, 'Bob', 'http://id.loc.gov/fake/111')
+      UriService.client.create_term(vocabulary_string_key, 'Prometheus', 'http://id.loc.gov/fake/222')
+      
+      expected_search_results = [
+        {'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Bob', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+        {'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Prometheus', 'vocabulary_string_key' => vocabulary_string_key, 'is_local' => false},
+      ]
+      
+      expect(UriService.client.list_terms(vocabulary_string_key)).to eq(expected_search_results)
+      
+      # Delete all terms in the database, but not in solr
+      UriService.client.db[UriService::TERMS].delete
+      
+      # We expect to still see the terms in solr before the reindex
+      expect(UriService.client.list_terms(vocabulary_string_key)).to eq(expected_search_results)
+      
+      # We expect to see zero terms after the reindex (with clear=true)
+      clear = true
+      UriService.client.reindex_all_terms(clear)
+      expect(UriService.client.list_terms(vocabulary_string_key)).to eq([])
     end
   end
   

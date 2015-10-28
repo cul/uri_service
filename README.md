@@ -166,6 +166,33 @@ start = 0
 UriService.client.list_terms('names', limit, start)
 ```
 
+### Rake Tasks for Rails:
+
+Setup required database tables:
+```sh
+bundle exec rake uri_service:db:setup
+```
+
+Also available outside of Rails as:
+
+```ruby
+UriService.client.create_required_tables
+```
+
+Reindex all database terms into Solr:
+```sh
+bundle exec rake uri_service:solr:reindex_all_terms # Reindex all terms in the database
+
+bundle exec rake uri_service:solr:reindex_all_terms CLEAR=true # Clear solr index before reindexing all terms (to remove old terms)
+```
+
+Also available outside of Rails as:
+
+```ruby
+UriService.client.reindex_all_terms(false, false) # Reindex
+UriService.client.reindex_all_terms(true, false) # Clear solr index and reindex
+```
+
 ### Running Integration Tests (for developers):
 
 Integration tests are great and we should run them.  Here's how:
