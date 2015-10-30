@@ -268,6 +268,14 @@ describe UriService::Client, type: :integration do
             UriService.client.create_local_term(vocabulary_string_key, 'Good old fashioned value')
           }.not_to raise_error
         end
+        it "creates a URI that starts with the UriService::Client#local_uri_base value" do
+          vocabulary_string_key = 'names'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          term = UriService.client.create_local_term(vocabulary_string_key, 'Good old fashioned value')
+          puts 'term uri: ' + term['uri'].inspect
+          puts 'vs: ' + UriService.client.local_uri_base.inspect
+          expect(term['uri'].start_with?(UriService.client.local_uri_base)).to eq(true)
+        end
         it "delegates work appropriately to the create_term_impl method, thereby creating a new term and returning a frozen term hash" do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')

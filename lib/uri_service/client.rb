@@ -166,7 +166,7 @@ class UriService::Client
   
     # Create a new URI for this local term, using the @local_uri_base
     term_uri = URI(@local_uri_base)
-    term_uri.path = '/' + File.join(vocabulary_string_key, SecureRandom.uuid) # Generate random UUID for local URI
+    term_uri.path += SecureRandom.uuid # Generate random UUID for local URI
     term_uri = term_uri.to_s
     
     # Getting a duplicate UUID from SecureRandom.uuid is EXTREMELY unlikely, but we'll account for it just in case (by making a few more attempts).
