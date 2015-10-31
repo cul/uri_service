@@ -14,6 +14,14 @@ namespace :uri_service do
         UriService.client.create_required_tables
         puts 'Done.'
       end
+      
+      desc "Drop tables and clear solr (Dangerous! Use wisely!)"
+      task :drop_tables_and_clear_solr => :environment do
+        UriService.client.db.drop_table?(UriService::VOCABULARIES) # Drop table if it exists
+        UriService.client.db.drop_table?(UriService::TERMS) # Drop table if it exists
+        UriService.client.clear_solr_index
+      end
+      
     end
     
   end

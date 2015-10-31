@@ -193,6 +193,14 @@ UriService.client.reindex_all_terms(false, false) # Reindex
 UriService.client.reindex_all_terms(true, false) # Clear solr index and reindex
 ```
 
+### Problems when sharing an sqlite database with Rails:
+If you're using an sqlite database for your Rails application's standard ActiveRecord connection (which is probably not the case in production environments), you should avoid using the same sqlite database file for UriService due to database locking issues -- otherwise you're likely to encounter this error:
+
+```
+SQLite3::ReadOnlyException: attempt to write a readonly database
+```
+In most cases, you'll probably find it easier to keep the UriService tables in a separate database anyway.
+
 ### Running Integration Tests (for developers):
 
 Integration tests are great and we should run them.  Here's how:

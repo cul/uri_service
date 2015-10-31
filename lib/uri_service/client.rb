@@ -109,6 +109,7 @@ class UriService::Client
           String :string_key, size: 255, index: true, unique: true
           String :display_label, size: 255
         end
+        puts 'Created table: ' + UriService::VOCABULARIES.to_s
       else
         puts 'Skipped creation of table ' + UriService::VOCABULARIES.to_s + ' because it already exists.'
       end
@@ -124,6 +125,7 @@ class UriService::Client
           TrueClass :is_local, default: false
           String :additional_fields, text: true
         end
+        puts 'Created table: ' + UriService::TERMS.to_s
       else
         puts 'Skipped creation of table ' + UriService::TERMS.to_s + ' because it already exists.'
       end
@@ -500,6 +502,13 @@ class UriService::Client
   
   def do_solr_commit
     @rsolr_pool.with do |rsolr|
+      rsolr.commit
+    end
+  end
+  
+  def clear_solr_index
+    @rsolr_pool.with do |rsolr|
+      rsolr.delete_by_query('*:*');
       rsolr.commit
     end
   end
