@@ -1,18 +1,20 @@
 class UriService::Client
   
-  attr_reader :db, :rsolr_pool, :local_uri_base
+  attr_reader :db, :rsolr_pool, :local_uri_base, :temporary_uri_base
   
   ALPHANUMERIC_UNDERSCORE_KEY_REGEX = /\A[a-z]+[a-z0-9_]*\z/
-  VALID_URI_REGEX = /\A#{URI::regexp(['http', 'https'])}\z/
-  CORE_FIELD_NAMES = ['uri', 'vocabulary_string_key', 'value', 'is_local']
+  CORE_FIELD_NAMES = ['uri', 'vocabulary_string_key', 'value', 'type']
+  VALID_TYPES = [UriService::TermType::EXTERNAL, UriService::TermType::LOCAL, UriService::TermType::TEMPORARY]
   
   def initialize(opts)
     raise UriService::InvalidOptsError, "Must supply opts['local_uri_base'] to initialize method." if opts['local_uri_base'].nil?
+    raise UriService::InvalidOptsError, "Must supply opts['temporary_uri_base'] to initialize method." if opts['temporary_uri_base'].nil?
     raise UriService::InvalidOptsError, "Must supply opts['database'] to initialize method." if opts['database'].nil?
     raise UriService::InvalidOptsError, "Must supply opts['solr'] to initialize method." if opts['solr'].nil?
     
-    # Set local_uri_base
+    # Set local_uri_base and temporary_uri_base
     @local_uri_base = opts['local_uri_base']
+    @temporary_uri_base = opts['temporary_uri_base']
     
     # Create DB connection pool
     @db = Sequel.connect(opts['database'])
@@ -45,7 +47,7 @@ class UriService::Client
           term_db_row[:value],
           term_db_row[:uri],
           JSON.parse(term_db_row[:additional_fields]),
-          term_db_row[:is_local],
+          term_db_row[:type],
         false)
         
         if print_progress_to_console
@@ -122,7 +124,7 @@ class UriService::Client
           String :uri_hash, fixed: true, size: 64, unique: true
           String :value, text: true
           String :value_hash, fixed: true, size: 64
-          TrueClass :is_local, default: false
+          String :type, null: false
           String :additional_fields, text: true
         end
         puts 'Created table: ' + UriService::TERMS.to_s
@@ -157,79 +159,60 @@ class UriService::Client
     end
   end
   
-  # Creates a new term.
-  def create_term(vocabulary_string_key, value, term_uri, additional_fields={})
-    return self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, false, false)
-  end
-  
-  # Creates a new local term, auto-generating a URI
-  # By default, if raise_error_if_local_term_value_exists_in_vocabulary param is true, rejects the creation of a local value if that exact value already exists in the specified vocabulary
-  def create_local_term(vocabulary_string_key, value, additional_fields={}, raise_error_if_local_term_value_exists_in_vocabulary=true)
-  
-    # Create a new URI for this local term, using the @local_uri_base
-    term_uri = URI(@local_uri_base)
-    term_uri.path += SecureRandom.uuid # Generate random UUID for local URI
-    term_uri = term_uri.to_s
+  # Creates a new term
+  def create_term(type, opts)
+    raise UriService::InvalidTermTypeError, 'Invalid type: ' + type unless VALID_TYPES.include?(type)
     
-    # Getting a duplicate UUID from SecureRandom.uuid is EXTREMELY unlikely, but we'll account for it just in case (by making a few more attempts).
-    5.times {
-      begin
-        return self.create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, true, raise_error_if_local_term_value_exists_in_vocabulary)
-      rescue UriService::ExistingUriError
-        raise UriService::ExistingUriError, "UriService generated a duplicate random UUID (via SecureRandom.uuid) and will now attempt to create another.  This type of problem is EXTREMELY rare."
-      end
-    }
+    vocabulary_string_key = opts.delete(:vocabulary_string_key)
+    value = opts.delete(:value)
+    uri = opts.delete(:uri)
+    additional_fields = opts.delete(:additional_fields) || {}
     
-    return nil
-  end
-  
-  def create_term_impl(vocabulary_string_key, value, term_uri, additional_fields, is_local, raise_error_if_local_term_value_exists_in_vocabulary)
-    self.handle_database_disconnect do
-    
-      additional_fields.stringify_keys!
+    if type == UriService::TermType::EXTERNAL
+      # URI is required
+      raise UriService::InvalidOptsError, "A uri must be supplied for terms of type #{type}." if uri.nil?
       
-      #Ensure that vocabulary with vocabulary_string_key exists
-      if self.find_vocabulary(vocabulary_string_key).nil?
-        raise UriService::NonExistentVocabularyError, "There is no vocabulary with string key: " + vocabulary_string_key
-      end
-      unless term_uri =~ VALID_URI_REGEX
-        raise UriService::InvalidUriError, "Invalid URI supplied: #{term_uri}, with result #{(VALID_URI_REGEX.match(term_uri)).to_s}"
-      end
-      validate_additional_fields(additional_fields) # This method call raises an error if an invalid additional_field key is supplied
+      return create_term_impl(type, vocabulary_string_key, value, uri, additional_fields)
+    else
+      # URI should not be present
+      raise UriService::InvalidOptsError, "A uri cannot supplied for term type: #{type}." unless uri.nil?
       
-      @db.transaction do
-        
-        value_hash = Digest::SHA256.hexdigest(value)
-        
-        if raise_error_if_local_term_value_exists_in_vocabulary && @db[UriService::TERMS].where(value_hash: value_hash, vocabulary_string_key: vocabulary_string_key).count > 0
-          raise UriService::DisallowedDuplicateLocalTermValueError, "A local term already exists with the value #{value}.  This is not allowed when param raise_error_if_local_term_value_exists_in_vocabulary == true."
-        end
-        
-        begin
-          @db[UriService::TERMS].insert(
-            is_local: is_local,
-            uri: term_uri,
-            uri_hash: Digest::SHA256.hexdigest(term_uri),
-            value: value,
-            value_hash: value_hash,
-            vocabulary_string_key: vocabulary_string_key,
-            additional_fields: JSON.generate(additional_fields)
-          )
-          send_term_to_solr(vocabulary_string_key, value, term_uri, additional_fields, is_local)
-        rescue Sequel::UniqueConstraintViolation
-          raise UriService::ExistingUriError, "A term already exists with uri: " + term_uri + " (conflict found via uri_hash check)"
-        end
+      if type == UriService::TermType::TEMPORARY
+        # No two TEMPORARY terms within the same vocabulary can have the same value, so we generate a unique URI from a hash of the (vocabulary_string_key + value) to ensure uniqueness.
+        uri = self.generate_uri_for_temporary_term(vocabulary_string_key, value)
+        return create_term_impl(type, vocabulary_string_key, value, uri, additional_fields)
+      elsif type == UriService::TermType::LOCAL
+        5.times {
+          # We generate a unique URI for a local term from a UUID generator.
+          # Getting a duplicate UUID from a call to SecureRandom.uuid is EXTREMELY unlikely,
+          # but we'll account for it just in case by being ready to make multiple attempts.
+          begin
+            # Generate new URI for LOCAL and TEMPORARY terms
+            uri = URI(@local_uri_base)
+            uri.path += SecureRandom.uuid # Generate random UUID for local URI
+            uri = uri.to_s
+            return create_term_impl(type, vocabulary_string_key, value, uri, additional_fields)
+          rescue UriService::ExistingUriError
+            next
+          end
+        }
+        # Probabilistically, the error below should never be raised.
+        raise UriService::CouldNotGenerateUriError, "UriService generated a duplicate random UUID (via SecureRandom.uuid) too many times in a row.  Probabilistically, this should never happen."
       end
       
-      return generate_frozen_term_hash(vocabulary_string_key, value, term_uri, additional_fields, is_local)
     end
   end
   
-  def generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, is_local)
+  def generate_uri_for_temporary_term(vocabulary_string_key, term_value)
+    uri = URI(@temporary_uri_base + Digest::SHA256.hexdigest(vocabulary_string_key + term_value))
+    return uri.to_s
+  end
+  
+  def generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, type)
     hash_to_return = {}
     hash_to_return['uri'] = uri
     hash_to_return['value'] = value
-    hash_to_return['is_local'] = is_local
+    hash_to_return['type'] = type
     hash_to_return['vocabulary_string_key'] = vocabulary_string_key
     
     additional_fields.each do |key, val|
@@ -241,45 +224,43 @@ class UriService::Client
     return hash_to_return
   end
   
-  def create_term_solr_doc(vocabulary_string_key, value, uri, additional_fields, is_local)
+  def create_term_solr_doc(vocabulary_string_key, value, uri, additional_fields, type)
     doc = {}
     doc['uri'] = uri
     doc['value'] = value
-    doc['is_local'] = is_local
+    doc['type'] = type
     doc['vocabulary_string_key'] = vocabulary_string_key
     
-    additional_fields.each do |key, val|
-      doc[key + self.class.get_solr_suffix_for_object(val)] = val
-    end
+    doc['additional_fields'] = JSON.generate(additional_fields)
     
     return doc
   end
   
-  def self.get_solr_suffix_for_object(obj)
-    if obj.is_a?(Array)
-      # Note boolean arrays aren't supported because they don't seem useful in this context
-      if obj[0].is_a?(Fixnum)
-        return '_isim'
-      else
-        # Treat like a string array
-        return '_ssim'
-      end
-    else
-      if obj.is_a?(String)
-        return '_ssi'
-      elsif obj.is_a?(TrueClass) || obj.is_a?(FalseClass)
-        return '_bsi'
-      elsif obj.is_a?(Fixnum)
-        return '_isi'
-      else
-        raise UriService::UnsupportedObjectTypeError, "Unable to determine solr suffix for unsupported object type: #{obj.class.name}"
-      end
-    end
-  end
+  #def self.get_solr_suffix_for_object(obj)
+  #  if obj.is_a?(Array)
+  #    # Note boolean arrays aren't supported because they don't seem useful in this context
+  #    if obj[0].is_a?(Fixnum)
+  #      return '_isim'
+  #    else
+  #      # Treat like a string array
+  #      return '_ssim'
+  #    end
+  #  else
+  #    if obj.is_a?(String)
+  #      return '_ssi'
+  #    elsif obj.is_a?(TrueClass) || obj.is_a?(FalseClass)
+  #      return '_bsi'
+  #    elsif obj.is_a?(Fixnum)
+  #      return '_isi'
+  #    else
+  #      raise UriService::UnsupportedObjectTypeError, "Unable to determine solr suffix for unsupported object type: #{obj.class.name}"
+  #    end
+  #  end
+  #end
   
   # Index the DB row term data into solr
-  def send_term_to_solr(vocabulary_string_key, value, term_uri, additional_fields, is_local, commit=true)
-    doc = create_term_solr_doc(vocabulary_string_key, value, term_uri, additional_fields, is_local)
+  def send_term_to_solr(vocabulary_string_key, value, uri, additional_fields, type, commit=true)
+    doc = create_term_solr_doc(vocabulary_string_key, value, uri, additional_fields, type)
     @rsolr_pool.with do |rsolr|
       rsolr.add(doc)
       rsolr.commit if commit
@@ -287,7 +268,7 @@ class UriService::Client
   end
   
   # Validates additional_fields and verifies that no reserved words are supplied
-  def validate_additional_fields(additional_fields)
+  def validate_additional_field_keys(additional_fields)
     additional_fields.each do |key, value|
       if CORE_FIELD_NAMES.include?(key.to_s)
         raise UriService::InvalidAdditionalFieldKeyError, "Cannot supply the key \"#{key.to_s}\" as an additional field because it is a reserved key."
@@ -308,8 +289,14 @@ class UriService::Client
     end
   end
   
-  # Finds the first term matching the specified conditions
-  def find_term_by(opts)
+  # Finds the term with the given uri
+  def find_term_by_uri(uri)
+    results = self.find_terms_where({uri: uri}, 1)
+    return results.length == 1 ? results.first : nil
+  end
+  
+  # Finds terms that match the specified conditions
+  def find_terms_where(opts, limit=10)
     fqs = []
     
     # Only search on allowed fields
@@ -324,14 +311,20 @@ class UriService::Client
       response = rsolr.get('select', params: {
         :q => '*:*',
         :fq => fqs,
-        :rows => 1,
-        :sort => 'score desc, value_ssort asc, uri asc' # For consistent sorting
+        :rows => limit,
+        :sort => 'value_ssort asc, uri asc' # For consistent sorting
+        # Note: We don't sort by solr score because solr fq searches don't factor into the score
       })
-      if response['response']['numFound'] == 1
-        return term_solr_doc_to_frozen_term_hash(response['response']['docs'].first)
+      if response['response']['docs'].length > 0
+        arr_to_return = []
+        response['response']['docs'].each do |doc|
+          arr_to_return << term_solr_doc_to_frozen_term_hash(doc)
+        end
+        return arr_to_return
+      else
+        return []
       end
     end
-    return nil
   end
   
   def term_solr_doc_to_frozen_term_hash(term_solr_doc)
@@ -339,19 +332,10 @@ class UriService::Client
     uri = term_solr_doc.delete('uri')
     vocabulary_string_key = term_solr_doc.delete('vocabulary_string_key')
     value = term_solr_doc.delete('value')
-    is_local = term_solr_doc.delete('is_local')
-    additional_fields = {}
+    type = term_solr_doc.delete('type')
+    additional_fields = JSON.parse(term_solr_doc.delete('additional_fields'))
     
-    # Iterate through remaining keys and put them in additional_fields after removing suffixes
-    term_solr_doc.each do |key, val|
-      # Skip certain automatically added fields that aren't part of the term_hash
-      next if ['_version_', 'timestamp', 'score'].include?(key)
-      
-      # Remove trailing '_si', '_bi', etc. if present for solr-suffixed fields
-      additional_fields[key.gsub(/_[^_]+$/, '')] = val
-    end
-    
-    return generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, is_local)
+    return generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, type)
   end
   
   def find_terms_by_query(vocabulary_string_key, value_query, limit=10, start=0)
@@ -433,12 +417,12 @@ class UriService::Client
     end
   end
   
-  def delete_term(term_uri, commit=true)
+  def delete_term(uri, commit=true)
     self.handle_database_disconnect do
       @db.transaction do
-        @db[UriService::TERMS].where(uri: term_uri).delete
+        @db[UriService::TERMS].where(uri: uri).delete
         @rsolr_pool.with do |rsolr|
-          rsolr.delete_by_query('uri:' + UriService.solr_escape(term_uri))
+          rsolr.delete_by_query('uri:' + UriService.solr_escape(uri))
           rsolr.commit if commit
         end
       end
@@ -461,12 +445,15 @@ class UriService::Client
   end
   
   # opts format: {:value => 'new value', :additional_fields => {'key' => 'value'}}
-  def update_term(term_uri, opts, merge_additional_fields=true)
+  def update_term(uri, opts, merge_additional_fields=true)
     self.handle_database_disconnect do
-      dataset = @db[UriService::TERMS].where(uri: term_uri)
-      raise UriService::NonExistentUriError, "No term found with uri: " + term_uri if dataset.count == 0
-        
-      term_db_row = dataset.first
+      term_db_row = @db[UriService::TERMS].first(uri: uri)
+      raise UriService::NonExistentUriError, "No term found with uri: " + uri if term_db_row.nil?
+      
+      if term_db_row[:type] == UriService::TermType::TEMPORARY
+        # TEMPORARY terms cannot have their values, additional_fields or anything else changed
+        raise UriService::CannotChangeTemporaryTerm, "Temporary terms cannot be changed. Delete unusued temporary terms or create new ones."
+      end
       
       new_value = opts[:value] || term_db_row[:value]
       new_additional_fields = term_db_row[:additional_fields].nil? ? {} : JSON.parse(term_db_row[:additional_fields])
@@ -479,14 +466,14 @@ class UriService::Client
           new_additional_fields = opts[:additional_fields]
         end
       end
-      validate_additional_fields(new_additional_fields)
+      validate_additional_field_keys(new_additional_fields)
       
       @db.transaction do
-        dataset.update(value: new_value, value_hash: Digest::SHA256.hexdigest(new_value), additional_fields: JSON.generate(new_additional_fields))
-        self.send_term_to_solr(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
+        @db[UriService::TERMS].where(uri: uri).update(value: new_value, value_hash: Digest::SHA256.hexdigest(new_value), additional_fields: JSON.generate(new_additional_fields))
+        self.send_term_to_solr(term_db_row[:vocabulary_string_key], new_value, uri, new_additional_fields, term_db_row[:type])
       end
       
-      return generate_frozen_term_hash(term_db_row[:vocabulary_string_key], new_value, term_uri, new_additional_fields, term_db_row[:is_local])
+      return generate_frozen_term_hash(term_db_row[:vocabulary_string_key], new_value, uri, new_additional_fields, term_db_row[:type])
     end
   end
   
@@ -513,16 +500,95 @@ class UriService::Client
     end
   end
   
+  #########################
+  # BEGIN PRIVATE METHODS #
+  #########################
+  
+  private
+  
+  # Backing implementation for actual term creation in db/solr.
+  # - Performs some data validations.
+  # - Ensures uniqueness of URIs in database.
+  # - Returns an existing TEMPORARY term if a user attempts to
+  #   create a new TEMPORARY term with an existing value/vocabulary combo.
+  def create_term_impl(type, vocabulary_string_key, value, uri, additional_fields)
+    self.handle_database_disconnect do
+      
+      if type == UriService::TermType::TEMPORARY
+        # If this is a TEMPORARY term, we need to ensure that the temporary
+        # passed in URI is a hash of the vocabulary + value, just in case this
+        # method is ever called directly instead of through the create_term
+        # wrapper method. This is to ensure that our expectations about the
+        # uniqueness of TEMPORARY term values is never violated.
+        unless uri == self.generate_uri_for_temporary_term(vocabulary_string_key, value)
+          raise UriService::InvalidTemporaryTermUriError, "The supplied URI was not derived from the supplied (vocabulary_string_key+value) pair."
+        end
+        
+        # TEMPORARY terms are not meant to hold data in additional_fields.
+        if additional_fields.size > 0
+          raise UriService::InvalidOptsError, "Terms of type #{type} cannot have additional_fields."
+        end
+      end
+      
+      unless uri =~ UriService::VALID_URI_REGEX
+        raise UriService::InvalidUriError, "Invalid URI supplied during term creation: #{uri}"
+      end
+      
+      #Ensure that vocabulary with vocabulary_string_key exists
+      if self.find_vocabulary(vocabulary_string_key).nil?
+        raise UriService::NonExistentVocabularyError, "There is no vocabulary with string key: " + vocabulary_string_key
+      end
+      
+      # Stringify and validate keys for additional_fields
+      additional_fields.stringify_keys!
+      validate_additional_field_keys(additional_fields) # This method call raises an error if an invalid additional_field key is supplied
+      
+      @db.transaction do
+        value_hash = Digest::SHA256.hexdigest(value)
+
+        begin
+          @db[UriService::TERMS].insert(
+            type: type,
+            uri: uri,
+            uri_hash: Digest::SHA256.hexdigest(uri),
+            value: value,
+            value_hash: value_hash,
+            vocabulary_string_key: vocabulary_string_key,
+            additional_fields: JSON.generate(additional_fields)
+          )
+          send_term_to_solr(vocabulary_string_key, value, uri, additional_fields, type)
+        rescue Sequel::UniqueConstraintViolation
+          
+          # If this is a new TEMPORARY term and we ran into a Sequel::UniqueConstraintViolation,
+          # that mean that the term already exists.  We should return that existing term.
+          # don't create a new one. Instead, return the existing one.
+          if type == UriService::TermType::TEMPORARY
+            return self.find_term_by_uri(uri)
+          end
+          
+          raise UriService::ExistingUriError, "A term already exists with uri: " + uri + " (conflict found via uri_hash check)"
+          
+        end
+        
+        return generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, type)
+      
+      end
+    end
+  end
+  
 end
 
+class UriService::CannotChangeTemporaryTerm < StandardError;end
+class UriService::CouldNotGenerateUriError < StandardError;end
 class UriService::InvalidAdditionalFieldKeyError < StandardError;end
-class UriService::InvalidVocabularyStringKeyError < StandardError;end
 class UriService::InvalidOptsError < StandardError;end
+class UriService::InvalidTemporaryTermUriError < StandardError;end
+class UriService::InvalidTermTypeError < StandardError;end
 class UriService::InvalidUriError < StandardError;end
+class UriService::InvalidVocabularyStringKeyError < StandardError;end
 class UriService::ExistingUriError < StandardError;end
 class UriService::ExistingVocabularyStringKeyError < StandardError;end
 class UriService::NonExistentUriError < StandardError;end
 class UriService::NonExistentVocabularyError < StandardError;end
 class UriService::UnsupportedObjectTypeError < StandardError;end
 class UriService::UnsupportedSearchFieldError < StandardError;end
-class UriService::DisallowedDuplicateLocalTermValueError < StandardError;end

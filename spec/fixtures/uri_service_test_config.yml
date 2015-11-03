@@ -3,6 +3,7 @@
 # sqlite3 example (requires sqlite3 gem)
 sqlite:
   local_uri_base: 'http://id.example.com/term/'
+  temporary_uri_base: 'com:example:id:temporary:'
   solr:
     url: 'http://localhost:9983/solr/uri_service_test'
     pool_size: 5
@@ -16,6 +17,7 @@ sqlite:
 # mysql2 example (requires mysql gem)
 mysql2:
   local_uri_base: 'http://id.example.com/term/'
+  temporary_uri_base: 'com:example:id:temporary:'
   solr:
     url: 'http://localhost:9983/solr/uri_service_test'
     pool_size: 5

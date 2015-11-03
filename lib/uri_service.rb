@@ -12,9 +12,10 @@ module UriService
   VOCABULARIES = :vocabularies
   TERM = :term
   TERMS = :terms
+  VALID_URI_REGEX = /\A#{URI::regexp}\z/
   
   # Initialize the main instance of UriService::Client
-  # opts format: { 'local_uri_base' => 'http://id.example.com/term/', 'solr' => {...solr config...}, 'database' => {...database config...} }
+  # opts format: { 'local_uri_base' => 'http://id.example.com/term/', temporary_uri_base: 'temporary:', 'solr' => {...solr config...}, 'database' => {...database config...} }
   def self.init(opts)
     if @client && @client.connected?
       @client.disconnect!
@@ -47,6 +48,7 @@ module UriService
 end
 
 require "uri_service/version"
+require "uri_service/term_type"
 require "uri_service/client"
 
 require 'uri_service/railtie' if defined?(Rails)

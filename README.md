@@ -15,6 +15,7 @@ gem install uri_service
 ```ruby
 UriService::init({
   'local_uri_base' => 'http://id.example.com/term/',
+  'temporary_uri_base' => 'com:example:id:temporary:',
   'solr' => {
     'url' => 'http://localhost:8983/solr/uri_service_test',
     'pool_size' => 5,
@@ -36,6 +37,7 @@ UriService.client.do_stuff(...)
 ```ruby
 client = UriService::Client.new({
   'local_uri_base' => 'http://id.example.com/term/',
+  'temporary_uri_base' => 'com:example:id:temporary:',
   'solr' => {
     'url' => 'http://localhost:8983/solr/uri_service_test',
     'pool_size' => 5,
@@ -65,6 +67,7 @@ Note that the database that you specify here does not have to be the same databa
 ```yaml
 development:
   local_uri_base: 'http://id.example.com/term/'
+  temporary_uri_base: 'com:example:id:temporary:'
   solr:
     url: 'http://localhost:8983/solr/uri_service_development'
     pool_size: 5
@@ -77,6 +80,7 @@ development:
 
 test:
   local_uri_base: 'http://id.example.com/term/'
+  temporary_uri_base: 'com:example:id:temporary:'
   solr:
     url: 'http://localhost:8983/solr/uri_service_test'
     pool_size: 5
@@ -89,6 +93,7 @@ test:
 
 production:
   local_uri_base: 'http://id.example.com/term/'
+  temporary_uri_base: 'com:example:id:temporary:'
   solr:
     url: 'http://localhost:9983/solr/uri_service_production'
     pool_size: 5
