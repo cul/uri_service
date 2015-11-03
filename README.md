@@ -10,11 +10,11 @@ Used when caching a value/URI pair from an external controlled vocabulary within
 
 **Local Term (UriService::TermType::LOCAL)**
 
-Used when defining locally-managed terms in the UriService datastore. Automatically creates a local URI for a new local term.  Example: A university wants to maintain a vocabulary that includes various departments, and we want to maintain a list of locally-managed URIs for these departments.
+Used when defining locally-managed terms in the UriService datastore. Automatically creates a local URI for a new local term.  Example: We want to maintain a vocabulary for various departments within a university, and we want to create locally-managed URIs for these departments.
 
 **Temporary Term (UriService::TermType::TEMPORARY)**
 
-Used when you want to add a value to your UriService datastore, but have no authority information about the term and do not wish to create a local URI. Temporary term entries cannot store additional data fields, and no two temporary terms within the same vocabulary can have the same value. Basically, a termporary term is intended to identify an *exact string value* rather than identifiying an intellectual entity. Temporary terms should eventually be replaced by local or external terms later on when the specific intellectual entity is known.  Example: We want to record information about the author of an old and mysterious letter by "John Smith."  We don't know which "John Smith," this refers to, so we'll create (or re-use) a temporary URI that's associated with the value "John Smith."  One day, when we figure out more about the letter and the author, we'll be able to update the record information and create an external term for globablly-recognized "John Smith" that refers to a globally-recognized URI, or we'll create a local URI if an external URI is unavailable.
+Used when you want to add a value to your UriService datastore, but have no authority information about the term and do not wish to create a local URI. Temporary term entries cannot store additional data fields, and no two temporary terms within the same vocabulary can have the same value. Basically, a termporary term is intended to identify an *exact string value* rather than identifiying an intellectual entity. Temporary terms should eventually be replaced by external or local terms later on when more information is known about the entity to which you are referring .  Example: We want to record information about the author of an old and mysterious letter by "John Smith."  We don't know which "John Smith," this refers to, so we'll create (or re-use) a temporary URI that's associated with the value "John Smith."  One day, when we figure out more about the letter and the author, we'll be able to update the record information and refer to an external term that has a globally-recognized URI, or we'll create a local URI if an external URI is unavailable.
 
 ### Usage:
 
@@ -165,15 +165,35 @@ UriService.client.find_terms_by_query('names', 'batman')
 #     'uri' => 'http://id.loc.gov/authorities/names/n91059657',
 #     'value' => 'Batman, John, 1800-1839',
 #     'vocabulary_string_key' => 'names',
-#     'is_local' => false
+#     'type' => 'external'
 #   }
 #   {
 #     'uri' => 'http://id.loc.gov/authorities/names/n82259885',
 #     'value' => 'Batman, Stephen, -1584',
 #     'vocabulary_string_key' => 'names',
-#     'is_local' => false
+#     'type' => 'external'
 #   },
 # ]
+```
+
+Alternate way to find terms without a text query:
+```ruby
+UriService.client.find_terms_where(
+  {
+    'vocabulary_string_key' => 'names',
+    'value' => 'Smith, John',
+    'type' => UriService::TermType::EXTERNAL
+  },
+  11
+)
+
+# Above method call returns an array of up to 11 terms, or an empty array if no terms are found
+```
+
+Finding a single term by URI:
+```ruby
+UriService.client.find_term_by_uri('http://id.example.com/123')
+# Returns a term hash or nil
 ```
 
 Listing terms in a vocabulary:
