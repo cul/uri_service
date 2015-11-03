@@ -2,6 +2,20 @@
 
 A database-backed and Solr-cached lookup/creation service for URIs.  Works with or without Rails.
 
+### Major Concepts:
+
+**External Term (UriService::TermType::EXTERNAL)**
+
+Used when caching a value/URI pair from an external controlled vocabulary within your UriService datastore.  Example: We want to add an entry for U.S. President Abraham Lincoln to our UriService datastore, so we'll create an external term that references his Library of Congress URI.
+
+**Local Term (UriService::TermType::LOCAL)**
+
+Used when defining locally-managed terms in the UriService datastore. Automatically creates a local URI for a new local term.  Example: A university wants to maintain a vocabulary that includes various departments, and we want to maintain a list of locally-managed URIs for these departments.
+
+**Temporary Term (UriService::TermType::TEMPORARY)**
+
+Used when you want to add a value to your UriService datastore, but have no authority information about the term and do not wish to create a local URI. Temporary term entries cannot store additional data fields, and no two temporary terms within the same vocabulary can have the same value. Basically, a termporary term is intended to identify an *exact string value* rather than identifiying an intellectual entity. Temporary terms should eventually be replaced by local or external terms later on when the specific intellectual entity is known.  Example: We want to record information about the author of an old and mysterious letter by "John Smith."  We don't know which "John Smith," this refers to, so we'll create (or re-use) a temporary URI that's associated with the value "John Smith."  One day, when we figure out more about the letter and the author, we'll be able to update the record information and create an external term for globablly-recognized "John Smith" that refers to a globally-recognized URI, or we'll create a local URI if an external URI is unavailable.
+
 ### Usage:
 
 **Install uri_service:**
@@ -132,16 +146,14 @@ UriService.client.list_vocabularies(limit, start)
 
 Create a term in a vocabulary:
 ```ruby
-# Creates a term in the 'names' vocabulary, using the given value, uri and a couple of custom key-value pairs
+# Create an EXTERNAL term in the 'names' vocabulary, using an external URI
+UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: 'names', value: 'Lincoln, Abraham, 1809-1865', uri: 'http://id.loc.gov/authorities/names/n79006779', additional_fields: {'is_awesome' => true, 'best_president' => true, 'hat_type' => 'Stove Pipe'}})
 
-UriService.client.create_term('names', 'Lincoln, Abraham, 1809-1865', 'http://id.loc.gov/authorities/names/n79006779', {'is_awesome' => true, 'best_president' => true, 'hat_type' => 'Stove Pipe'})
-```
+# Create a LOCAL term in the 'departments' vocabulary (note: A URI is not passed in because LOCAL terms generate their own URIs)
+UriService.client.create_term(UriService::TermType::LOCAL, {vocabulary_string_key: 'departments', value: 'Chemistry', additional_fields: {'department_code' => 'CHEM'}})
 
-Create a LOCAL term in a vocabulary (when you don't have a URI for your term):
-```ruby
-# Creates a new LOCAL term in the 'names' vocabulary.  New URI is automatically generated.
-
-UriService.client.create_local_term('names', 'Baby, Newborn', {'is_baby' => true})
+# Create a LOCAL term in the 'departments' vocabulary (note: A URI is not passed in because TEMPORARY terms generate their own URIs, and additional_fields are not allowed)
+UriService.client.create_term(UriService::TermType::LOCAL, {vocabulary_string_key: 'names', value: 'Smith, John'})
 ```
 
 Searching by string query for a term in a vocabulary:
