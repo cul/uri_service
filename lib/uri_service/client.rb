@@ -175,7 +175,7 @@ class UriService::Client
       return create_term_impl(type, vocabulary_string_key, value, uri, additional_fields)
     else
       # URI should not be present
-      raise UriService::InvalidOptsError, "A uri cannot supplied for term type: #{type}." unless uri.nil?
+      raise UriService::InvalidOptsError, "A uri cannot supplied for term type: #{type}" unless uri.nil?
       
       if type == UriService::TermType::TEMPORARY
         # No two TEMPORARY terms within the same vocabulary can have the same value, so we generate a unique URI from a hash of the (vocabulary_string_key + value) to ensure uniqueness.
@@ -512,6 +512,9 @@ class UriService::Client
   # - Returns an existing TEMPORARY term if a user attempts to
   #   create a new TEMPORARY term with an existing value/vocabulary combo.
   def create_term_impl(type, vocabulary_string_key, value, uri, additional_fields)
+    
+    raise UriService::InvalidTermTypeError, 'Invalid type: ' + type unless VALID_TYPES.include?(type)
+    
     self.handle_database_disconnect do
       
       if type == UriService::TermType::TEMPORARY

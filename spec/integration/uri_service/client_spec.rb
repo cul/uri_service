@@ -180,6 +180,14 @@ describe UriService::Client, type: :integration do
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
       end
       
+      it "raises an error if an invalid term type is supplied" do
+        expect {
+          uri = 'http://id.library.columbia.edu/term/1234567'
+          value = 'Cool Value'
+          UriService.client.send(:create_term_impl, 'invalid-term-type', vocabulary_string_key, value, uri, {})
+        }.to raise_error(UriService::InvalidTermTypeError)
+      end
+      
       it "creates a term and returns a frozen term hash" do
         uri = 'http://id.library.columbia.edu/term/1234567'
         value = 'Cool Value'
@@ -290,6 +298,20 @@ describe UriService::Client, type: :integration do
     
       before :example do
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+      end
+      
+      it "raises an error if an invalid term type is supplied" do
+        expect {
+          UriService.client.create_term(
+            'invalid-term-type',
+            {
+              vocabulary_string_key: vocabulary_string_key,
+              value: 'Value',
+              uri: 'http://id.library.columbia.edu/term/1234567',
+              additional_fields: {custom_field: 'custom value'}
+            }
+          )
+        }.to raise_error(UriService::InvalidTermTypeError)
       end
       
       it "creates an EXTERNAL term and returns a frozen term hash" do
