@@ -152,8 +152,8 @@ UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string
 # Create a LOCAL term in the 'departments' vocabulary (note: A URI is not passed in because LOCAL terms generate their own URIs)
 UriService.client.create_term(UriService::TermType::LOCAL, {vocabulary_string_key: 'departments', value: 'Chemistry', additional_fields: {'department_code' => 'CHEM'}})
 
-# Create a LOCAL term in the 'departments' vocabulary (note: A URI is not passed in because TEMPORARY terms generate their own URIs, and additional_fields are not allowed)
-UriService.client.create_term(UriService::TermType::LOCAL, {vocabulary_string_key: 'names', value: 'Smith, John'})
+# Create a TEMPORARY term in the 'departments' vocabulary (note: A URI is not passed in because TEMPORARY terms generate their own URIs, and additional_fields are not allowed)
+UriService.client.create_term(UriService::TermType::TEMPORARY, {vocabulary_string_key: 'names', value: 'Smith, John'})
 ```
 
 Searching by string query for a term in a vocabulary:

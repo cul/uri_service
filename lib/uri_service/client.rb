@@ -539,7 +539,7 @@ class UriService::Client
       
       #Ensure that vocabulary with vocabulary_string_key exists
       if self.find_vocabulary(vocabulary_string_key).nil?
-        raise UriService::NonExistentVocabularyError, "There is no vocabulary with string key: " + vocabulary_string_key
+        raise UriService::NonExistentVocabularyError, "There is no vocabulary with string key: " + vocabulary_string_key.to_s
       end
       
       # Stringify and validate keys for additional_fields
