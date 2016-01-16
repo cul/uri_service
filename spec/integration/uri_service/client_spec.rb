@@ -184,46 +184,49 @@ describe UriService::Client, type: :integration do
         expect {
           uri = 'http://id.library.columbia.edu/term/1234567'
           value = 'Cool Value'
-          UriService.client.send(:create_term_impl, 'invalid-term-type', vocabulary_string_key, value, uri, {})
+          UriService.client.send(:create_term_impl, 'invalid-term-type', vocabulary_string_key, value, uri, 'aut', {})
         }.to raise_error(UriService::InvalidTermTypeError)
       end
       
-      it "creates a term and returns a frozen term hash" do
+      it "creates a term and returns a frozen term hash with all expected fields" do
         uri = 'http://id.library.columbia.edu/term/1234567'
         value = 'Cool Value'
-        term = UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, value, uri, {})
+        authority = 'aut'
+        term = UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, value, uri, authority, {})
         expect(term.frozen?).to eq(true)
         expect(term).to eq({
           'vocabulary_string_key' => vocabulary_string_key,
           'uri' => uri,
           'value' => value,
+          'authority' => authority,
           'type' => UriService::TermType::EXTERNAL,
+          'internal_id' => term['internal_id']
         })
       end
       
       it "raises an error when a user attempts to create more than one EXTERNAL term with the same URI" do
         uri = 'http://id.example.gov/1234567'
-        UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'Val 1', uri, {})
+        UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'Val 1', uri, 'aut', {})
         expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'Val 2', uri, {})
+          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'Val 2', uri, 'aut', {})
         }.to raise_error(UriService::ExistingUriError)
       end
       
       it "raises an error when a user attempts to create more than one LOCAL term with the same URI" do
         uri = 'http://id.library.columbia.edu/term/1234567'
-        UriService.client.send(:create_term_impl, UriService::TermType::LOCAL, vocabulary_string_key, 'Val 1', uri, {})
+        UriService.client.send(:create_term_impl, UriService::TermType::LOCAL, vocabulary_string_key, 'Val 1', uri, 'aut', {})
         expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::LOCAL, vocabulary_string_key, 'Val 2', uri, {})
+          UriService.client.send(:create_term_impl, UriService::TermType::LOCAL, vocabulary_string_key, 'Val 2', uri, 'aut', {})
         }.to raise_error(UriService::ExistingUriError)
       end
       
       it "does NOT raise an error when a user attempts to create more than one TEMPORARY term with the same URI, but instead silently fails and returns the previously created first instance." do
         value = 'Temp Term'
         uri = UriService.client.generate_uri_for_temporary_term(vocabulary_string_key, value)
-        term1 = UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, {})
+        term1 = UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, '', {})
         term2 = nil
         expect {
-          term2 = UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, {})
+          term2 = UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, '', {})
         }.not_to raise_error
         expect(term1).to eq(term2)
         expect(UriService.client.list_terms(vocabulary_string_key, 2).length).to eq(1)
@@ -233,7 +236,7 @@ describe UriService::Client, type: :integration do
         value = 'Some Term'
         uri = 'some:uri'
         expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, {})
+          UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, 'aut', {})
         }.to raise_error(UriService::InvalidTemporaryTermUriError)
       end
       
@@ -241,33 +244,48 @@ describe UriService::Client, type: :integration do
         uri = 'not a uri'
         value = 'Cool Value'
         expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, value, uri, {})
+          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, value, uri, 'aut', {})
         }.to raise_error(UriService::InvalidUriError)
       end
       it "rejects invalid additional_fields keys (which can only contain lower case letters, numbers and underscores, but cannot start with an underscore)" do
         ['invalid key', '_invalid', 'Invalid', '???invalid'].each_with_index do |invalid_key, index|
           expect {
-            UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", {invalid_key => 'cool value'})
+            UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", 'aut', {invalid_key => 'cool value'})
           }.to raise_error(UriService::InvalidAdditionalFieldKeyError)
         end
       end
       it "raises an error when trying to create a term in a vocabulary that has not been created" do
         nonexistent_vocabulary_string_key = 'nonexistent'
         expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, nonexistent_vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", {})
+          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, nonexistent_vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", 'aut', {})
         }.to raise_error(UriService::NonExistentVocabularyError)
       end
       it "raises an error when supplying an additional field that is a reserved key" do
         expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", {'value' => '12345'})
+          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", 'aut', {'value' => '12345'})
         }.to raise_error(UriService::InvalidAdditionalFieldKeyError)
       end
       it "raises an error when supplying additional_fields to a TEMPORARY term" do
         value = 'Some Term'
         uri = UriService.client.generate_uri_for_temporary_term(vocabulary_string_key, value)
         expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, {some_key: 'some value'})
+          UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, '', {some_key: 'some value'})
         }.to raise_error(UriService::InvalidOptsError)
+      end
+      it "raises an error when supplying a non-empty-string authority to a TEMPORARY term" do
+        value = 'Some Term'
+        uri = UriService.client.generate_uri_for_temporary_term(vocabulary_string_key, value)
+        expect {
+          UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, 'nonemptystringauthority', {some_key: 'some value'})
+        }.to raise_error(UriService::InvalidOptsError)
+      end
+      it "allows non-TEMPORARY terms to have blank or non-blank authority values" do
+        non_blank_authority = 'aut'
+        blank_authority = ''
+        expect {
+          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', "http://id.loc.gov/something/a", non_blank_authority, {'zzz' => '12345'})
+          UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', "http://id.loc.gov/something/b", blank_authority, {'zzz' => '12345'})
+        }.to_not raise_error
       end
       it "creates a uri entry in both the database and solr" do
         uri = 'http://id.library.columbia.edu/term/1234567'
@@ -280,7 +298,7 @@ describe UriService::Client, type: :integration do
         end
         
         # Create term
-        UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', uri, {})
+        UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', uri, 'aut', {})
         
         # Expect 1 result in solr and 1 result in db after term creation
         expect(UriService.client.db[UriService::TERMS].where(uri: uri).count).to eq(1)
@@ -331,6 +349,7 @@ describe UriService::Client, type: :integration do
           'type' => UriService::TermType::EXTERNAL,
           'vocabulary_string_key' => vocabulary_string_key,
           'uri' => uri,
+          'internal_id' => term['internal_id'],
           'value' => 'Value',
           'custom_field' => 'custom value',
         })
@@ -352,6 +371,7 @@ describe UriService::Client, type: :integration do
           'uri' => term['uri'],
           'value' => 'Value',
           'custom_field' => 'custom value',
+          'internal_id' => term['internal_id']
         })
         expect(term['uri'].start_with?(UriService.client.local_uri_base)).to eq(true)
       end
@@ -369,7 +389,8 @@ describe UriService::Client, type: :integration do
           'type' => UriService::TermType::TEMPORARY,
           'vocabulary_string_key' => vocabulary_string_key,
           'uri' => term['uri'],
-          'value' => 'Value'
+          'value' => 'Value',
+          'internal_id' => term['internal_id']
         })
         expect(term['uri'].start_with?(UriService.client.temporary_uri_base)).to eq(true)
       end
@@ -422,7 +443,7 @@ describe UriService::Client, type: :integration do
       it "returns a result for an existing term" do
         uri = 'http://id.library.columbia.edu/term/123'
         value = 'My value'
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: {'custom_field' => 'custom value'}})
+        term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, authority: 'aut', additional_fields: {'custom_field' => 'custom value'}})
         
         expect(UriService.client.find_term_by_uri(uri)).to eq(
           {
@@ -430,16 +451,52 @@ describe UriService::Client, type: :integration do
             'uri' => uri,
             'value' => value,
             'vocabulary_string_key' => vocabulary_string_key,
-            'custom_field' => 'custom value'
+            'custom_field' => 'custom value',
+            'authority' => 'aut',
+            'internal_id' => term['internal_id']
           }
         )
       end
       it "returns nil when a term isn't found for the given uri" do
         uri = 'http://id.library.columbia.edu/term/123'
         value = 'My value'
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: {'custom_field' => 'custom value'}})
+        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, authority: 'aut', additional_fields: {'custom_field' => 'custom value'}})
         
         expect(UriService.client.find_term_by_uri('https://id.library.columbia.edu/zzzzz')).to eq(nil)
+      end
+    end
+    
+    describe "#find_term_by_internal_id" do
+      
+      let (:vocabulary_string_key) { 'names' }
+    
+      before :example do
+        UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+      end
+      
+      it "returns a result for an existing term" do
+        uri = 'http://id.library.columbia.edu/term/123'
+        value = 'My value'
+        term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, authority: 'aut', additional_fields: {'custom_field' => 'custom value'}})
+        
+        expect(UriService.client.find_term_by_internal_id(term['internal_id'])).to eq(
+          {
+            'type' => UriService::TermType::EXTERNAL,
+            'uri' => uri,
+            'value' => value,
+            'vocabulary_string_key' => vocabulary_string_key,
+            'custom_field' => 'custom value',
+            'internal_id' => term['internal_id'],
+            'authority' => 'aut'
+          }
+        )
+      end
+      it "returns nil when a term isn't found for the given uri" do
+        uri = 'http://id.library.columbia.edu/term/123'
+        value = 'My value'
+        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, authority: 'aut', additional_fields: {'custom_field' => 'custom value'}})
+        
+        expect(UriService.client.find_term_by_internal_id(1010102)).to eq(nil)
       end
     end
     
@@ -453,62 +510,71 @@ describe UriService::Client, type: :integration do
 
       before :example do
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-        UriService.client.create_term(type, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: additional_fields})
       end
 
       it "returns nil when no results are found" do
+        UriService.client.create_term(type, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: additional_fields})
         expect(UriService.client.find_terms_where(uri: 'http://fake.url.here/really/does/not/exist')).to eq([])
       end
       
       it "can find a term by uri" do
+        term = UriService.client.create_term(type, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: additional_fields})
         expect(UriService.client.find_terms_where(uri: uri)).to eq([
           {
           'uri' => uri,
           'value' => value,
-          'vocabulary_string_key' => vocabulary_string_key,
           'type' => type,
+          'vocabulary_string_key' => vocabulary_string_key,
+          'internal_id' => term['internal_id'],
           'custom_field' => 'custom value'
           }
         ])
       end
       
       it "can find a term by type" do
+        term = UriService.client.create_term(type, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: additional_fields})
         expect(UriService.client.find_terms_where(type: UriService::TermType::EXTERNAL)).to eq([
           {
             'uri' => uri,
             'value' => value,
-            'vocabulary_string_key' => vocabulary_string_key,
             'type' => type,
+            'vocabulary_string_key' => vocabulary_string_key,
+            'internal_id' => term['internal_id'],
             'custom_field' => 'custom value'
           }
         ])
       end
       
       it "can find a term by value" do
+        term = UriService.client.create_term(type, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: additional_fields})
         expect(UriService.client.find_terms_where(value: value)).to eq([
           {
             'uri' => uri,
             'value' => value,
-            'vocabulary_string_key' => vocabulary_string_key,
             'type' => UriService::TermType::EXTERNAL,
+            'vocabulary_string_key' => vocabulary_string_key,
+            'internal_id' => term['internal_id'],
             'custom_field' => 'custom value'
           }
         ])
       end
       
       it "can find a term by value" do
+        term = UriService.client.create_term(type, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: additional_fields})
         expect(UriService.client.find_terms_where(vocabulary_string_key: vocabulary_string_key)).to eq([
           {
             'uri' => uri,
             'value' => value,
-            'vocabulary_string_key' => vocabulary_string_key,
             'type' => UriService::TermType::EXTERNAL,
+            'vocabulary_string_key' => vocabulary_string_key,
+            'internal_id' => term['internal_id'],
             'custom_field' => 'custom value'
           }
         ])
       end
       
       it "raises an exception when an invalid find_by condition is supplied" do
+        UriService.client.create_term(type, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri, additional_fields: additional_fields})
         expect {
             UriService.client.find_terms_where(invalid_field: 'zzz')
           }.to raise_error(UriService::UnsupportedSearchFieldError)
@@ -520,8 +586,10 @@ describe UriService::Client, type: :integration do
       it "converts as expected" do
         uri = 'http://id.library.columbia.edu/term/1234567'
         value = 'What a great value'
+        authority = 'aut'
         type = UriService::TermType::EXTERNAL
         vocabulary_string_key = 'some_vocabulary'
+        internal_id = 12345
         additional_fields = {
           'field1' => 'string value',
           'field2' => 1,
@@ -531,15 +599,17 @@ describe UriService::Client, type: :integration do
         }
         
         expected_solr_doc = {
-          'uri' => 'http://id.library.columbia.edu/term/1234567',
-          'value' => 'What a great value',
+          'uri' => uri,
+          'value' => value,
           'type' => type,
-          'vocabulary_string_key' => 'some_vocabulary',
-          'additional_fields' => '{"field1":"string value","field2":1,"field3":true,"field4":["val1","val2"],"field5":[1,2,3,4,5]}'
+          'vocabulary_string_key' => vocabulary_string_key,
+          'authority' => authority,
+          'additional_fields' => '{"field1":"string value","field2":1,"field3":true,"field4":["val1","val2"],"field5":[1,2,3,4,5]}',
+          'internal_id' => internal_id
         }
         
         expect(UriService.client.create_term_solr_doc(
-          vocabulary_string_key, value, uri, additional_fields, type
+          vocabulary_string_key, value, uri, authority, additional_fields, type, internal_id
         )).to eq(expected_solr_doc)
       end
     end
@@ -549,32 +619,38 @@ describe UriService::Client, type: :integration do
         vocabulary_string_key = 'names'
         value = 'Grrrrreat name!'
         uri = 'http://id.loc.gov/123'
+        authority = 'aut'
         additional_fields = {'field1' => 1, 'field2' => ['aaa', 'bbb', 'ccc']}
         type = UriService::TermType::EXTERNAL
+        internal_id = 12345
         
         expected1 = {
           'uri' => uri,
           'value' => value,
           'vocabulary_string_key' => vocabulary_string_key,
+          'authority' => authority,
           'type' => type,
-          "additional_fields" => '{"field1":1,"field2":["aaa","bbb","ccc"]}',
+          'additional_fields' => '{"field1":1,"field2":["aaa","bbb","ccc"]}',
+          'internal_id' => internal_id
         }
         
         expected2 = {
           'uri' => uri,
           'value' => 'Even grrrreater value!',
           'vocabulary_string_key' => vocabulary_string_key,
+          'authority' => 'newauthority',
           'type' => type,
-          "additional_fields" => '{"field1":1,"field2":["aaa","bbb","ccc"]}',
+          'additional_fields' => '{"field1":1,"field2":["aaa","bbb","ccc"]}',
+          'internal_id' => internal_id
         }
         
-        UriService.client.send_term_to_solr(vocabulary_string_key, value, uri, additional_fields, type)
+        UriService.client.send_term_to_solr(vocabulary_string_key, value, uri, authority, additional_fields, type, internal_id)
         UriService.client.rsolr_pool.with do |rsolr|
           response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
           doc = response['response']['docs'][0]
           expect(doc.except('score', 'timestamp', '_version')).to eq(expected1)
         end
-        UriService.client.send_term_to_solr(vocabulary_string_key, 'Even grrrreater value!', uri, additional_fields, type)
+        UriService.client.send_term_to_solr(vocabulary_string_key, 'Even grrrreater value!', uri, 'newauthority', additional_fields, type, internal_id)
         UriService.client.rsolr_pool.with do |rsolr|
           response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
           doc = response['response']['docs'][0]
@@ -587,14 +663,14 @@ describe UriService::Client, type: :integration do
       it "returns a list of alphabetically terms" do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Val 1', uri: 'http://id.loc.gov/fake/term1', additional_fields: {}})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Val 2', uri: 'http://id.loc.gov/fake/term2', additional_fields: {}})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Val 3', uri: 'http://id.loc.gov/fake/term3', additional_fields: {}})
+        term1 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Val 1', uri: 'http://id.loc.gov/fake/term1', additional_fields: {}})
+        term2 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Val 2', uri: 'http://id.loc.gov/fake/term2', additional_fields: {}})
+        term3 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Val 3', uri: 'http://id.loc.gov/fake/term3', additional_fields: {}})
         
         expected_search_results = [
-          {'uri' => 'http://id.loc.gov/fake/term1', 'value' => 'Val 1', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/term2', 'value' => 'Val 2', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/term3', 'value' => 'Val 3', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL}
+          {'uri' => 'http://id.loc.gov/fake/term1', 'value' => 'Val 1', 'type' => UriService::TermType::EXTERNAL, 'vocabulary_string_key' => vocabulary_string_key, 'internal_id' => term1['internal_id']},
+          {'uri' => 'http://id.loc.gov/fake/term2', 'value' => 'Val 2', 'type' => UriService::TermType::EXTERNAL, 'vocabulary_string_key' => vocabulary_string_key, 'internal_id' => term2['internal_id']},
+          {'uri' => 'http://id.loc.gov/fake/term3', 'value' => 'Val 3', 'type' => UriService::TermType::EXTERNAL, 'vocabulary_string_key' => vocabulary_string_key, 'internal_id' => term3['internal_id']},
         ]
         
         expect(UriService.client.list_terms(vocabulary_string_key)).to eq(expected_search_results)
@@ -603,25 +679,27 @@ describe UriService::Client, type: :integration do
       it "can page through results using the limit and start params, proving that the limit and start params work properly" do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+        internal_ids = []
         10.times do |i|
-          UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: "Name #{i}", uri: "http://id.loc.gov/fake/#{i}"})
+          term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: "Name #{i}", uri: "http://id.loc.gov/fake/#{i}"})
+          internal_ids << term['internal_id']
         end
         
         expect(UriService.client.list_terms(vocabulary_string_key, 4, 0)).to eq([
-          {'uri' => 'http://id.loc.gov/fake/0', 'value' => 'Name 0', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/1', 'value' => 'Name 1', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/2', 'value' => 'Name 2', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/3', 'value' => 'Name 3', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
+          {'uri' => 'http://id.loc.gov/fake/0', 'value' => 'Name 0', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[0]},
+          {'uri' => 'http://id.loc.gov/fake/1', 'value' => 'Name 1', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[1]},
+          {'uri' => 'http://id.loc.gov/fake/2', 'value' => 'Name 2', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[2]},
+          {'uri' => 'http://id.loc.gov/fake/3', 'value' => 'Name 3', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[3]},
         ])
         expect(UriService.client.list_terms(vocabulary_string_key, 4, 4)).to eq([
-          {'uri' => 'http://id.loc.gov/fake/4', 'value' => 'Name 4', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/5', 'value' => 'Name 5', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/6', 'value' => 'Name 6', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/7', 'value' => 'Name 7', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
+          {'uri' => 'http://id.loc.gov/fake/4', 'value' => 'Name 4', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[4]},
+          {'uri' => 'http://id.loc.gov/fake/5', 'value' => 'Name 5', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[5]},
+          {'uri' => 'http://id.loc.gov/fake/6', 'value' => 'Name 6', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[6]},
+          {'uri' => 'http://id.loc.gov/fake/7', 'value' => 'Name 7', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[7]},
         ])
         expect(UriService.client.list_terms(vocabulary_string_key, 4, 8)).to eq([
-          {'uri' => 'http://id.loc.gov/fake/8', 'value' => 'Name 8', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/9', 'value' => 'Name 9', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
+          {'uri' => 'http://id.loc.gov/fake/8', 'value' => 'Name 8', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[8]},
+          {'uri' => 'http://id.loc.gov/fake/9', 'value' => 'Name 9', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[9]},
         ])
         
       end
@@ -633,14 +711,16 @@ describe UriService::Client, type: :integration do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
         
+        internal_ids = []
         3.times do |i|
-          UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: "Val #{i}", uri: "http://id.loc.gov/fake/term#{i}"})
+          term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: "Val #{i}", uri: "http://id.loc.gov/fake/term#{i}"})
+          internal_ids << term['internal_id']
         end
         
         expected_search_results = [
-          {'uri' => 'http://id.loc.gov/fake/term0', 'value' => 'Val 0', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/term1', 'value' => 'Val 1', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/term2', 'value' => 'Val 2', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL}
+          {'uri' => 'http://id.loc.gov/fake/term0', 'value' => 'Val 0', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[0]},
+          {'uri' => 'http://id.loc.gov/fake/term1', 'value' => 'Val 1', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[1]},
+          {'uri' => 'http://id.loc.gov/fake/term2', 'value' => 'Val 2', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[2]}
         ]
         
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, '')).to eq(expected_search_results)
@@ -652,13 +732,14 @@ describe UriService::Client, type: :integration do
           uri = 'http://id.library.columbia.edu/term/1234567'
           value = 'Me'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
+          term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
           
           expected_search_results = [{
             'uri' => uri,
             'value' => value,
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term['internal_id']
           }]
           
           expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'me')).to eq(expected_search_results)
@@ -670,13 +751,14 @@ describe UriService::Client, type: :integration do
           uri = 'http://id.library.columbia.edu/term/1234567'
           value = 'I'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
+          term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
           
           expected_search_results = [{
             'uri' => uri,
             'value' => value,
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term['internal_id']
           }]
           
           expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'i')).to eq(expected_search_results)
@@ -689,13 +771,14 @@ describe UriService::Client, type: :integration do
         uri = 'http://id.library.columbia.edu/term/1234567'
         value = 'What a great value'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
+        term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
         
         expected_search_results = [{
           'uri' => uri,
           'value' => value,
           'vocabulary_string_key' => vocabulary_string_key,
-          'type' => UriService::TermType::EXTERNAL
+          'type' => UriService::TermType::EXTERNAL,
+          'internal_id' => term['internal_id']
         }]
         
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'z')).to eq([]) # Letter not present in term returns no results
@@ -726,13 +809,14 @@ describe UriService::Client, type: :integration do
         uri = 'http://id.library.columbia.edu/term/1234567'
         value = 'What a great value'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
+        term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
         
         expected_search_results = [{
           'uri' => uri,
           'value' => value,
           'vocabulary_string_key' => vocabulary_string_key,
-          'type' => UriService::TermType::EXTERNAL
+          'type' => UriService::TermType::EXTERNAL,
+          'internal_id' => term['internal_id']
         }]
         
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, uri[0...(uri.length-1)])).not_to eq(expected_search_results)
@@ -743,14 +827,14 @@ describe UriService::Client, type: :integration do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
         
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Cat', uri: 'http://id.loc.gov/fake/111'})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Catastrophe', uri: 'http://id.loc.gov/fake/222'})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Catastrophic', uri: 'http://id.loc.gov/fake/333'})
+        term1 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Cat', uri: 'http://id.loc.gov/fake/111'})
+        term2 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Catastrophe', uri: 'http://id.loc.gov/fake/222'})
+        term3 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Catastrophic', uri: 'http://id.loc.gov/fake/333'})
         
         expected_search_results = [
-          { 'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Cat', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL },
-          { 'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Catastrophe', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL },
-          { 'uri' => 'http://id.loc.gov/fake/333', 'value' => 'Catastrophic', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL },
+          { 'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Cat', 'type' => UriService::TermType::EXTERNAL, 'vocabulary_string_key' => vocabulary_string_key, 'internal_id' => term1['internal_id']},
+          { 'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Catastrophe', 'type' => UriService::TermType::EXTERNAL, 'vocabulary_string_key' => vocabulary_string_key, 'internal_id' => term2['internal_id']},
+          { 'uri' => 'http://id.loc.gov/fake/333', 'value' => 'Catastrophic', 'type' => UriService::TermType::EXTERNAL, 'vocabulary_string_key' => vocabulary_string_key, 'internal_id' => term3['internal_id']}
         ]
         
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Cat')).to eq(expected_search_results)
@@ -759,14 +843,14 @@ describe UriService::Client, type: :integration do
       it "sorts full word matches first when present, even if there are other words in the term and it would otherwise sort later alphabetically" do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'A Catastrophe', uri: 'http://id.loc.gov/fake/111'})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Not Catastrophic', uri: 'http://id.loc.gov/fake/222'})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'The Cat', uri: 'http://id.loc.gov/fake/333'})
+        term1 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'A Catastrophe', uri: 'http://id.loc.gov/fake/111'})
+        term2 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Not Catastrophic', uri: 'http://id.loc.gov/fake/222'})
+        term3 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'The Cat', uri: 'http://id.loc.gov/fake/333'})
         
         expected_search_results = [
-          { 'uri' => 'http://id.loc.gov/fake/333', 'value' => 'The Cat', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL },
-          { 'uri' => 'http://id.loc.gov/fake/111', 'value' => 'A Catastrophe', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL },
-          { 'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Not Catastrophic', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL },
+          { 'uri' => 'http://id.loc.gov/fake/333', 'value' => 'The Cat', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => term3['internal_id']},
+          { 'uri' => 'http://id.loc.gov/fake/111', 'value' => 'A Catastrophe', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => term1['internal_id']},
+          { 'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Not Catastrophic', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => term2['internal_id']},
         ]
         
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Cat')).to eq(expected_search_results)
@@ -776,28 +860,31 @@ describe UriService::Client, type: :integration do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
         
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Steve Jobs', uri: 'http://id.loc.gov/fake/222'})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Steve Kobs', uri: 'http://id.loc.gov/fake/111'})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Steve Lobs', uri: 'http://id.loc.gov/fake/333'})
+        term1 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Steve Jobs', uri: 'http://id.loc.gov/fake/222'})
+        term2 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Steve Kobs', uri: 'http://id.loc.gov/fake/111'})
+        term3 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Steve Lobs', uri: 'http://id.loc.gov/fake/333'})
         
         expected_search_results = [
           {
             'uri' => 'http://id.loc.gov/fake/222',
             'value' => 'Steve Jobs',
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term1['internal_id']
           },
           {
             'uri' => 'http://id.loc.gov/fake/111',
             'value' => 'Steve Kobs',
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term2['internal_id']
           },
           {
             'uri' => 'http://id.loc.gov/fake/333',
             'value' => 'Steve Lobs',
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term3['internal_id']
           }
         ]
         
@@ -808,21 +895,23 @@ describe UriService::Client, type: :integration do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
         
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Supermanners', uri: 'http://id.loc.gov/fake/111'})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Batmanners', uri: 'http://id.loc.gov/fake/222'})
+        term1 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Supermanners', uri: 'http://id.loc.gov/fake/111'})
+        term2 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Batmanners', uri: 'http://id.loc.gov/fake/222'})
         
         expected_search_results = [
           {
             'uri' => 'http://id.loc.gov/fake/222',
             'value' => 'Batmanners',
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term2['internal_id']
           },
           {
             'uri' => 'http://id.loc.gov/fake/111',
             'value' => 'Supermanners',
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term1['internal_id']
           }
         ]
         
@@ -834,14 +923,15 @@ describe UriService::Client, type: :integration do
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
         
         UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Supermanners', uri: 'http://id.loc.gov/fake/111'})
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Batmanners', uri: 'http://id.loc.gov/fake/222'})
+        term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Batmanners', uri: 'http://id.loc.gov/fake/222'})
         
         expected_search_results = [
           {
             'uri' => 'http://id.loc.gov/fake/222',
             'value' => 'Batmanners',
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term['internal_id']
           }
         ]
         
@@ -854,14 +944,15 @@ describe UriService::Client, type: :integration do
         uri = 'http://id.loc.gov/fake/222'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
         
-        UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
+        term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: value, uri: uri})
         
         expected_search_results = [
           {
             'uri' => uri,
             'value' => value,
             'vocabulary_string_key' => vocabulary_string_key,
-            'type' => UriService::TermType::EXTERNAL
+            'type' => UriService::TermType::EXTERNAL,
+            'internal_id' => term['internal_id']
           }
         ]
         
@@ -871,25 +962,27 @@ describe UriService::Client, type: :integration do
       it "can page through results using the limit and start params, proving that the limit and start params work properly" do
         vocabulary_string_key = 'names'
         UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+        internal_ids = []
         10.times do |i|
-          UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: "Name #{i}", uri: "http://id.loc.gov/fake/#{i}"})
+          term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: "Name #{i}", uri: "http://id.loc.gov/fake/#{i}"})
+          internal_ids << term['internal_id']
         end
         
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Name', 4, 0)).to eq([
-          {'uri' => 'http://id.loc.gov/fake/0', 'value' => 'Name 0', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/1', 'value' => 'Name 1', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/2', 'value' => 'Name 2', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/3', 'value' => 'Name 3', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
+          {'uri' => 'http://id.loc.gov/fake/0', 'value' => 'Name 0', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[0]},
+          {'uri' => 'http://id.loc.gov/fake/1', 'value' => 'Name 1', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[1]},
+          {'uri' => 'http://id.loc.gov/fake/2', 'value' => 'Name 2', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[2]},
+          {'uri' => 'http://id.loc.gov/fake/3', 'value' => 'Name 3', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[3]},
         ])
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Name', 4, 4)).to eq([
-          {'uri' => 'http://id.loc.gov/fake/4', 'value' => 'Name 4', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/5', 'value' => 'Name 5', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/6', 'value' => 'Name 6', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/7', 'value' => 'Name 7', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
+          {'uri' => 'http://id.loc.gov/fake/4', 'value' => 'Name 4', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[4]},
+          {'uri' => 'http://id.loc.gov/fake/5', 'value' => 'Name 5', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[5]},
+          {'uri' => 'http://id.loc.gov/fake/6', 'value' => 'Name 6', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[6]},
+          {'uri' => 'http://id.loc.gov/fake/7', 'value' => 'Name 7', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[7]},
         ])
         expect(UriService.client.find_terms_by_query(vocabulary_string_key, 'Name', 4, 8)).to eq([
-          {'uri' => 'http://id.loc.gov/fake/8', 'value' => 'Name 8', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-          {'uri' => 'http://id.loc.gov/fake/9', 'value' => 'Name 9', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
+          {'uri' => 'http://id.loc.gov/fake/8', 'value' => 'Name 8', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[8]},
+          {'uri' => 'http://id.loc.gov/fake/9', 'value' => 'Name 9', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => internal_ids[9]},
         ])
         
       end
@@ -915,11 +1008,13 @@ describe UriService::Client, type: :integration do
           vocabulary_string_key = 'names'
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Original Value', uri: uri})
+          UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Original Value', uri: uri, authority: 'aut'})
           expect(UriService.client.find_term_by_uri(uri)['value']).to eq('Original Value')
-          UriService.client.update_term(uri, {value: 'New Value', additional_fields: {'new_field' => 'new field value'}})
+          expect(UriService.client.find_term_by_uri(uri)['authority']).to eq('aut')
+          UriService.client.update_term(uri, {value: 'New Value', authority: 'newauthority', additional_fields: {'new_field' => 'new field value'}})
           term = UriService.client.find_term_by_uri(uri)
           expect(term['value']).to eq('New Value')
+          expect(term['authority']).to eq('newauthority')
           expect(term['new_field']).to eq('new field value')
         end
         it "returns a frozen term hash" do
@@ -927,21 +1022,23 @@ describe UriService::Client, type: :integration do
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Original Value', uri: uri})
-          term = UriService.client.update_term(uri, {value: 'New Value', additional_fields: {'new_field' => 'new field value'}})
+          term = UriService.client.update_term(uri, {value: 'New Value', authority: 'aut', additional_fields: {'new_field' => 'new field value'}})
           expect(term.frozen?).to eq(true)
           expect(term).to eq({
             'vocabulary_string_key' => vocabulary_string_key,
             'uri' => uri,
             'value' => 'New Value',
+            'authority' => 'aut',
             'type' => UriService::TermType::EXTERNAL,
-            'new_field' => 'new field value'
+            'new_field' => 'new field value',
+            'internal_id' => term['internal_id']
           })
         end
         it "properly updates both the database and solr, hashing the term uri and value" do
           vocabulary_string_key = 'names'
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
-          UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'My term', uri: uri})
+          term = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'My term', uri: uri, authority: 'aut'})
           expect(UriService.client.db[UriService::TERMS].where(uri: uri).count).to eq(1)
           UriService.client.rsolr_pool.with do |rsolr|
             response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
@@ -950,7 +1047,8 @@ describe UriService::Client, type: :integration do
           
           new_value = 'updated value'
           new_additional_fields = {'updated' => true, 'cool' => 'very'}
-          UriService.client.update_term(uri, {value: new_value, additional_fields: new_additional_fields}, false)
+          new_authority = 'newauthority'
+          UriService.client.update_term(uri, {value: new_value, authority: new_authority, additional_fields: new_additional_fields}, false)
           
           db_row = UriService.client.db[UriService::TERMS].where(uri: uri).first
           doc = nil
@@ -959,26 +1057,30 @@ describe UriService::Client, type: :integration do
             doc = response['response']['docs'].first
           end
           
-          expect(db_row.except(:id)).to eq({
+          expect(db_row).to eq({
             :vocabulary_string_key => 'names',
             :value => new_value,
             :value_hash => '9c3868c849c38d8c8367cb29796d7d7d3378ef79a43b5e41b55bfcd15cf87f81',
             :uri => "http://id.library.columbia.edu/term/1234567",
             :uri_hash => "7dbe84657ed648d1748cb03d862cd4a45e590037bc4c2fcdbd04062ef4be226f",
+            :authority => "newauthority",
             :type => UriService::TermType::EXTERNAL,
-            :additional_fields => JSON.generate(new_additional_fields)
+            :additional_fields => JSON.generate(new_additional_fields),
+            :id => term['internal_id']
           })
           expect(doc.except('timestamp', '_version_', 'score', 'updated_bsi')).to eq({
             "vocabulary_string_key" => "names",
             "value" => "updated value",
             "uri" => "http://id.library.columbia.edu/term/1234567",
+            "authority" => "newauthority",
             "type" => UriService::TermType::EXTERNAL,
             "additional_fields" => '{"updated":true,"cool":"very"}',
+            "internal_id" => term['internal_id']
           })
         end
         it "raises an exception when trying to update a term that does not exist" do
           expect {
-            UriService.client.update_term('http://this.does.not.exist/really/does/not', {value: 'New Value'})
+            UriService.client.update_term('http://this.does.not.exist/really/does/not', {value: 'New Value', authority: 'aut'})
           }.to raise_error(UriService::NonExistentUriError)
         end
         it "rejects invalid additional_fields keys (which can only contain lower case letters, numbers and underscores, but cannot start with an underscore)" do
@@ -1008,7 +1110,7 @@ describe UriService::Client, type: :integration do
           expect(term['some_key']).to eq('some val')
           expect(term['another_key']).to eq('another val')
         end
-        it "can replace all of the additional fields for a regular term when merge param equals false" do
+        it "will replace all of the additional fields for a regular term when merge param equals false" do
           vocabulary_string_key = 'names'
           uri = 'http://id.library.columbia.edu/term/1234567'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
@@ -1037,7 +1139,8 @@ describe UriService::Client, type: :integration do
       uri = 'http://id.loc.gov/123'
       value = 'Some value'
       type = UriService::TermType::EXTERNAL
-      
+      authority = 'aut'
+      internal_id = '13579'
       additional_fields = {
         'field1' => 'one',
         'field2' => 2,
@@ -1046,22 +1149,24 @@ describe UriService::Client, type: :integration do
         'field5' => [1, 2, 3]
       }
       
-      term = UriService.client.generate_frozen_term_hash(vocabulary_string_key, value, uri, additional_fields, type)
-      expect(term.frozen?).to eq(true)
-      expect(term).to eq({
+      term_hash = UriService.client.generate_frozen_term_hash(vocabulary_string_key, value, uri, authority, additional_fields, type, internal_id)
+      expect(term_hash.frozen?).to eq(true)
+      expect(term_hash).to eq({
         'vocabulary_string_key' => vocabulary_string_key,
         'uri' => uri,
         'value' => value,
         'type' => UriService::TermType::EXTERNAL,
+        'authority' => authority,
         'field1' => 'one',
         'field2' => 2,
         'field3' => true,
         'field4' => ['one', 'two', 'three'],
-        'field5' => [1, 2, 3]
+        'field5' => [1, 2, 3],
+        'internal_id' => internal_id
       })
       
       # And when we attempt to modify the frozen hash, a RuntimeError error is raised
-      expect{ term['value'] = 'new value' }.to raise_error(RuntimeError)
+      expect{ term_hash['value'] = 'new value' }.to raise_error(RuntimeError)
     end
   end
   
@@ -1102,12 +1207,12 @@ describe UriService::Client, type: :integration do
       vocabulary_string_key = 'names'
       UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
       
-      UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Bob', uri: 'http://id.loc.gov/fake/111'})
-      UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Prometheus', uri: 'http://id.loc.gov/fake/222'})
+      term1 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Bob', uri: 'http://id.loc.gov/fake/111'})
+      term2 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Prometheus', uri: 'http://id.loc.gov/fake/222'})
       
       expected_search_results = [
-        {'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Bob', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-        {'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Prometheus', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
+        {'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Bob', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => term1['internal_id']},
+        {'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Prometheus', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => term2['internal_id']},
       ]
       
       expect(UriService.client.list_terms(vocabulary_string_key)).to eq(expected_search_results)
@@ -1129,12 +1234,12 @@ describe UriService::Client, type: :integration do
       vocabulary_string_key = 'names'
       UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
       
-      UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Bob', uri: 'http://id.loc.gov/fake/111'})
-      UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Prometheus', uri: 'http://id.loc.gov/fake/222'})
+      term1 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Bob', uri: 'http://id.loc.gov/fake/111'})
+      term2 = UriService.client.create_term(UriService::TermType::EXTERNAL, {vocabulary_string_key: vocabulary_string_key, value: 'Prometheus', uri: 'http://id.loc.gov/fake/222'})
       
       expected_search_results = [
-        {'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Bob', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
-        {'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Prometheus', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL},
+        {'uri' => 'http://id.loc.gov/fake/111', 'value' => 'Bob', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => term1['internal_id']},
+        {'uri' => 'http://id.loc.gov/fake/222', 'value' => 'Prometheus', 'vocabulary_string_key' => vocabulary_string_key, 'type' => UriService::TermType::EXTERNAL, 'internal_id' => term2['internal_id']},
       ]
       
       expect(UriService.client.list_terms(vocabulary_string_key)).to eq(expected_search_results)
@@ -1151,19 +1256,4 @@ describe UriService::Client, type: :integration do
       expect(UriService.client.list_terms(vocabulary_string_key)).to eq([])
     end
   end
-  
-  #describe "::get_solr_suffix_for_object" do
-  #  it "creates the expected suffixes for supported object types" do
-  #    expect(UriService::Client::get_solr_suffix_for_object( 'string value'   )).to eq('_ssi')
-  #    expect(UriService::Client::get_solr_suffix_for_object( 1                )).to eq('_isi')
-  #    expect(UriService::Client::get_solr_suffix_for_object( true             )).to eq('_bsi')
-  #    expect(UriService::Client::get_solr_suffix_for_object( ['val1', 'val2'] )).to eq('_ssim')
-  #    expect(UriService::Client::get_solr_suffix_for_object( [1, 2, 3, 4, 5]  )).to eq('_isim')
-  #  end
-  #
-  #  it "raises an exception for unsupported object types" do
-  #    expect{ UriService::Client::get_solr_suffix_for_object(Struct.new(:something)) }.to raise_error(UriService::UnsupportedObjectTypeError)
-  #  end
-  #end
-
 end
