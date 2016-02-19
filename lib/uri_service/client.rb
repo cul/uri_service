@@ -448,14 +448,14 @@ class UriService::Client
       term_db_row = @db[UriService::TERMS].first(uri: uri)
       raise UriService::NonExistentUriError, "No term found with uri: " + uri if term_db_row.nil?
       
-      if term_db_row[:type] == UriService::TermType::TEMPORARY
-        # TEMPORARY terms cannot have their values, additional_fields or anything else changed
-        raise UriService::CannotChangeTemporaryTerm, "Temporary terms cannot be changed. Delete unusued temporary terms or create new ones."
-      end
-      
       new_value = opts[:value] || term_db_row[:value]
       new_authority = opts[:authority] || term_db_row[:authority]
       new_additional_fields = term_db_row[:additional_fields].nil? ? {} : JSON.parse(term_db_row[:additional_fields])
+      
+      if term_db_row[:type] == UriService::TermType::TEMPORARY && new_value != term_db_row[:value]
+        # TEMPORARY terms cannot have their values changed, but it is possible to update other fields
+        raise UriService::CannotChangeTemporaryTermValue, "The value of a temporary term cannot be changed. Delete unusued temporary terms or create a new one with a different value."
+      end
       
       unless opts[:additional_fields].nil?
         if merge_additional_fields
@@ -525,16 +525,6 @@ class UriService::Client
         unless uri == self.generate_uri_for_temporary_term(vocabulary_string_key, value)
           raise UriService::InvalidTemporaryTermUriError, "The supplied URI was not derived from the supplied (vocabulary_string_key+value) pair."
         end
-        
-        # TEMPORARY terms are not meant to hold data in additional_fields.
-        if additional_fields.size > 0
-          raise UriService::InvalidOptsError, "Terms of type #{type} cannot have additional_fields."
-        end
-        
-        # TEMPORARY terms are not meant to store authority information
-        unless authority == ''
-          raise UriService::InvalidOptsError, "Terms of type #{type} cannot have an authority."
-        end
       end
       
       unless uri =~ UriService::VALID_URI_REGEX
@@ -586,7 +576,7 @@ class UriService::Client
   
 end
 
-class UriService::CannotChangeTemporaryTerm < StandardError;end
+class UriService::CannotChangeTemporaryTermValue < StandardError;end
 class UriService::CouldNotGenerateUriError < StandardError;end
 class UriService::InvalidAdditionalFieldKeyError < StandardError;end
 class UriService::InvalidOptsError < StandardError;end

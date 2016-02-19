@@ -265,21 +265,14 @@ describe UriService::Client, type: :integration do
           UriService.client.send(:create_term_impl, UriService::TermType::EXTERNAL, vocabulary_string_key, 'zzz', "http://id.loc.gov/something/cool", 'aut', {'value' => '12345'})
         }.to raise_error(UriService::InvalidAdditionalFieldKeyError)
       end
-      it "raises an error when supplying additional_fields to a TEMPORARY term" do
+      it "allows TEMPORARY terms to have authority and additional_fields values" do
         value = 'Some Term'
         uri = UriService.client.generate_uri_for_temporary_term(vocabulary_string_key, value)
         expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, '', {some_key: 'some value'})
-        }.to raise_error(UriService::InvalidOptsError)
+          UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, 'auth', {some_key: 'some value'})
+        }.to_not raise_error
       end
-      it "raises an error when supplying a non-empty-string authority to a TEMPORARY term" do
-        value = 'Some Term'
-        uri = UriService.client.generate_uri_for_temporary_term(vocabulary_string_key, value)
-        expect {
-          UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, 'nonemptystringauthority', {some_key: 'some value'})
-        }.to raise_error(UriService::InvalidOptsError)
-      end
-      it "allows non-TEMPORARY terms to have blank or non-blank authority values" do
+      it "allows terms to have blank or non-blank authority values" do
         non_blank_authority = 'aut'
         blank_authority = ''
         expect {
@@ -1121,13 +1114,21 @@ describe UriService::Client, type: :integration do
           expect(term['some_key']).to be_nil
           expect(term['another_key']).to eq('another val')
         end
-        it "will raise an error a user attempts to update a TEMPORARY term (because TEMPORARY terms cannot be updated)" do
+        it "will raise an error a user attempts to update a TEMPORARY term value (because TEMPORARY term values cannot be updated)" do
           vocabulary_string_key = 'names'
           UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
           term = UriService.client.create_term(UriService::TermType::TEMPORARY, {vocabulary_string_key: vocabulary_string_key, value: 'The Value'})
           expect {
             UriService.client.update_term(term['uri'], {value: 'New Value'})
-          }.to raise_error(UriService::CannotChangeTemporaryTerm)
+          }.to raise_error(UriService::CannotChangeTemporaryTermValue)
+        end
+        it "will not raise an error if a user attempts to update a TEMPORARY term property that is NOT the value field" do
+          vocabulary_string_key = 'names'
+          UriService.client.create_vocabulary(vocabulary_string_key, 'Names')
+          term = UriService.client.create_term(UriService::TermType::TEMPORARY, {authority: 'myauth', vocabulary_string_key: vocabulary_string_key, value: 'The Value'})
+          expect {
+            UriService.client.update_term(term['uri'], {authority: 'newauth', additional_fields: {'newkey' => 'newvalue'}})
+          }.to_not raise_error
         end
       end
     end
