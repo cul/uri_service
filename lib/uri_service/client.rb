@@ -170,6 +170,7 @@ class UriService::Client
     value = opts.delete(:value)
     uri = opts.delete(:uri)
     authority = opts.has_key?(:authority) ? opts.delete(:authority) : ''
+    authority = '' if authority.nil?
     additional_fields = opts.delete(:additional_fields) || {}
     
     if type == UriService::TermType::EXTERNAL
