@@ -232,6 +232,35 @@ describe UriService::Client, type: :integration do
         expect(UriService.client.list_terms(vocabulary_string_key, 2).length).to eq(1)
       end
       
+      it "returns an already-created temporary term when a user tries to create a second temporary term with an existing value, but merges in and saves non-present additional_fields supplied in the second create attempt, and updates the authority if an authority didn't already exist (but it doesn't change already-present additional_fields or authority)" do
+        value = 'Temp Term'
+        
+        first_set_of_additional_fields = {'a' => '1', 'b' => '2'}
+        first_authority = ''
+        second_set_of_additional_fields = {'b' => '12345', 'c' => '3'}
+        second_authority = 'new_auth'
+        third_set_of_additional_fields = {'a' => '111', 'b' => '222', 'c' => '333'}
+        third_authority = 'different_auth'
+        
+        uri = UriService.client.generate_uri_for_temporary_term(vocabulary_string_key, value)
+        UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, first_authority, first_set_of_additional_fields)
+        found_term = UriService.client.find_term_by_uri(uri)
+        expect(found_term.has_key?('c')).to eq(false)
+        expect(found_term.has_key?('authority')).to eq(false)
+        UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, second_authority, second_set_of_additional_fields)
+        found_term = UriService.client.find_term_by_uri(uri)
+        expect(found_term['a']).to eq('1')
+        expect(found_term['b']).to eq('2')
+        expect(found_term['c']).to eq('3')
+        expect(found_term['authority']).to eq(second_authority)
+        UriService.client.send(:create_term_impl, UriService::TermType::TEMPORARY, vocabulary_string_key, value, uri, third_authority, third_set_of_additional_fields)
+        found_term = UriService.client.find_term_by_uri(uri)
+        expect(found_term['a']).to eq('1')
+        expect(found_term['b']).to eq('2')
+        expect(found_term['c']).to eq('3')
+        expect(found_term['authority']).to eq(second_authority)
+      end
+      
       it "raises an error when the supplied uri was not derived from the supplied from the supplied vocabulary_string_key and value" do
         value = 'Some Term'
         uri = 'some:uri'

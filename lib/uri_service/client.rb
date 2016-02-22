@@ -509,7 +509,8 @@ class UriService::Client
   # - Performs some data validations.
   # - Ensures uniqueness of URIs in database.
   # - Returns an existing TEMPORARY term if a user attempts to
-  #   create a new TEMPORARY term with an existing value/vocabulary combo.
+  #   create a new TEMPORARY term with an existing value/vocabulary combo,
+  #   also adding non-existent supplied additional_fields to the existing temporary term.
   def create_term_impl(type, vocabulary_string_key, value, uri, authority, additional_fields)
     
     raise UriService::InvalidTermTypeError, 'Invalid type: ' + type unless VALID_TYPES.include?(type)
@@ -557,19 +558,36 @@ class UriService::Client
           send_term_to_solr(vocabulary_string_key, value, uri, authority, additional_fields, type, db_id)
         rescue Sequel::UniqueConstraintViolation
           
-          # If this is a new TEMPORARY term and we ran into a Sequel::UniqueConstraintViolation,
-          # that mean that the term already exists.  We should return that existing term.
-          # don't create a new one. Instead, return the existing one.
+          # If the user is trying to create a new TEMPORARY term and we ran into a Sequel::UniqueConstraintViolation,
+          # that means that the term already exists.  We will return that existing term, but also update the term with
+          # any non-existent additional_fields supplied by the user and during this create operation, and a supplied
+          # authority if the term did not already have an authority.
           if type == UriService::TermType::TEMPORARY
-            return self.find_term_by_uri(uri)
+            temporary_term = self.find_term_by_uri(uri)
+            
+            opts = {}
+            non_existent_additional_fields = additional_fields.keys - temporary_term.keys
+            
+            if non_existent_additional_fields.length > 0
+              additional_fields_to_merge_in = additional_fields.select{|k, v| non_existent_additional_fields.include?(k)}
+              opts[:additional_fields] = additional_fields_to_merge_in
+            end
+            
+            if temporary_term['authority'].nil? && authority.length > 0 && authority != temporary_term['authority']
+              opts[:authority] = authority
+            end
+            
+            if opts.size > 0
+              temporary_term = UriService.client.update_term(temporary_term['uri'], opts, true)
+            end
+            
+            return temporary_term
           end
           
           raise UriService::ExistingUriError, "A term already exists with uri: " + uri + " (conflict found via uri_hash check)"
-          
         end
         
         return generate_frozen_term_hash(vocabulary_string_key, value, uri, authority, additional_fields, type, db_id)
-      
       end
     end
   end
