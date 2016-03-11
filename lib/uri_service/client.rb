@@ -595,17 +595,18 @@ class UriService::Client
   
 end
 
-class UriService::CannotChangeTemporaryTermValue < StandardError;end
-class UriService::CouldNotGenerateUriError < StandardError;end
-class UriService::InvalidAdditionalFieldKeyError < StandardError;end
-class UriService::InvalidOptsError < StandardError;end
-class UriService::InvalidTemporaryTermUriError < StandardError;end
-class UriService::InvalidTermTypeError < StandardError;end
-class UriService::InvalidUriError < StandardError;end
-class UriService::InvalidVocabularyStringKeyError < StandardError;end
-class UriService::ExistingUriError < StandardError;end
-class UriService::ExistingVocabularyStringKeyError < StandardError;end
-class UriService::NonExistentUriError < StandardError;end
-class UriService::NonExistentVocabularyError < StandardError;end
-class UriService::UnsupportedObjectTypeError < StandardError;end
-class UriService::UnsupportedSearchFieldError < StandardError;end
+class UriService::Error < StandardError;end
+class UriService::CannotChangeTemporaryTermValue < UriService::Error;end
+class UriService::CouldNotGenerateUriError < UriService::Error;end
+class UriService::InvalidAdditionalFieldKeyError < UriService::Error;end
+class UriService::InvalidOptsError < UriService::Error;end
+class UriService::InvalidTemporaryTermUriError < UriService::Error;end
+class UriService::InvalidTermTypeError < UriService::Error;end
+class UriService::InvalidUriError < UriService::Error;end
+class UriService::InvalidVocabularyStringKeyError < UriService::Error;end
+class UriService::ExistingUriError < UriService::Error;end
+class UriService::ExistingVocabularyStringKeyError < UriService::Error;end
+class UriService::NonExistentUriError < UriService::Error;end
+class UriService::NonExistentVocabularyError < UriService::Error;end
+class UriService::UnsupportedObjectTypeError < UriService::Error;end
+class UriService::UnsupportedSearchFieldError < UriService::Error;end
