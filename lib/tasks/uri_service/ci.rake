@@ -34,6 +34,7 @@ namespace :uri_service do
     FileUtils.mkdir_p(File.dirname(uri_service_config['database']['database']))
     client = UriService::Client.new(uri_service_config)
     client.create_required_tables
+    FileUtils.mkdir_p('tmp')
   end
   
   desc "CI build (using SolrWrapper and Solr 6)"
@@ -50,7 +51,7 @@ namespace :uri_service do
       mirror_url: 'http://lib-solr-mirror.princeton.edu/dist/',
       managed: true,
       download_path: File.join('tmp', "solr-#{solr_version}.zip"),
-      instance_dir: File.join('tmp', "solr-#{solr_version}"),
+      instance_dir: instance_dir,
     }) do |solr_wrapper_instance|
       
       # Create collection
