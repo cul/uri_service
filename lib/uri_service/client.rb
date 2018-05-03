@@ -391,6 +391,7 @@ class UriService::Client
       
       solr_params = {
         :fq => 'vocabulary_string_key:' + UriService.solr_escape(vocabulary_string_key),
+        :q => '*:*',
         :rows => limit,
         :start => start,
         :sort => 'value_ssort asc, uri asc' # Include 'uri asc' as part of sort to ensure consistent sorting
