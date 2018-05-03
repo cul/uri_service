@@ -38,7 +38,7 @@ namespace :uri_service do
   end
   
   desc "CI build (using SolrWrapper and Solr 6)"
-  task :ci_with_solr_6_wrapper do
+  task ci_with_solr_6_wrapper: :ci_prepare do
     solr_version = '6.3.0'
     instance_dir = File.join('tmp', "solr-#{solr_version}")
     FileUtils.rm_rf(instance_dir)
@@ -56,7 +56,6 @@ namespace :uri_service do
       
       # Create collection
       solr_wrapper_instance.with_collection(name: 'uri_service_test', dir: File.join('spec/fixtures', 'uri_service_test_cores/uri_service_test-solr6-conf')) do |collection_name|
-        Rake::Task["uri_service:ci_prepare"].invoke
         Rake::Task["uri_service:rspec"].invoke
       end
       
@@ -65,7 +64,7 @@ namespace :uri_service do
   end
   
   desc "CI build (using JettyWrapper)"
-  task :ci_with_jetty_wrapper do
+  task ci_with_jetty_wrapper: :ci_prepare do
     
     Jettywrapper.url = "https://github.com/cul/hydra-jetty/archive/solr-only.zip"
     Jettywrapper.jetty_dir = File.join('tmp', 'jetty-test')
@@ -92,7 +91,6 @@ namespace :uri_service do
       java_opts: ["-XX:MaxPermSize=128m", "-Xmx256m"]
     })
     error = Jettywrapper.wrap(jetty_params) do
-      Rake::Task["uri_service:ci_prepare"].invoke
       Rake::Task["uri_service:rspec"].invoke
     end
     raise "test failures: #{error}" if error
