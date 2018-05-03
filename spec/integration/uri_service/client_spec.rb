@@ -670,13 +670,13 @@ describe UriService::Client, type: :integration do
         UriService.client.rsolr_pool.with do |rsolr|
           response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
           doc = response['response']['docs'][0]
-          expect(doc.except('score', 'timestamp', '_version')).to eq(expected1)
+          expect(doc.except('score', 'timestamp', '_version_')).to eq(expected1)
         end
         UriService.client.send_term_to_solr(vocabulary_string_key, 'Even grrrreater value!', uri, 'newauthority', additional_fields, type, internal_id)
         UriService.client.rsolr_pool.with do |rsolr|
           response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
           doc = response['response']['docs'][0]
-          expect(doc.except('score', 'timestamp', '_version')).to eq(expected2)
+          expect(doc.except('score', 'timestamp', '_version_')).to eq(expected2)
         end
       end
     end
