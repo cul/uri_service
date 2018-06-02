@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <schema name="UriService" version="1.0">
-  
+
   <uniqueKey>uri</uniqueKey>
-  
+
   <!-- If you remove this field, you must _also_ disable the update log in solrconfig.xml
      or Solr won't start. _version_ and update log are required for SolrCloud
-  --> 
+  -->
   <field name="_version_" type="long" indexed="true" stored="true"/>
-       
+
   <!-- Main fields -->
   <field name="uri"                     type="string" stored="true" indexed="true" multiValued="false" required="true"/>
   <field name="value" 					type="string" stored="true" indexed="true" multiValued="false" required="true"/>
@@ -15,16 +15,17 @@
   <field name="authority"				type="string" stored="true" indexed="true" multiValued="false" required="false"/>
   <field name="type" 					type="string" stored="true" indexed="true" multiValued="false" required="true"/>
   <field name="internal_id" 		    type="int"    stored="true" indexed="true" multiValued="false" required="true"/>
-  
+  <field name="uuid" 		    type="string"    stored="true" indexed="true" multiValued="false" required="true"/>
+
   <field name="additional_fields" 		type="string" stored="true" indexed="false" multiValued="false" required="true"/>
-  
+
   <field name="timestamp" 				type="date" indexed="true" stored="true" default="NOW" multiValued="false"/>
-  
+
   <!-- Suggest fields -->
   <dynamicField name="*_suggest" type="text_suggest" stored="false" indexed="true" multiValued="false"/>
   <dynamicField name="*_suggest_edge" type="text_suggest_edge" stored="false" indexed="true" multiValued="false"/>
   <dynamicField name="*_suggest_ngram" type="text_suggest_ngram" stored="false" indexed="true" multiValued="false"/>
-  
+
   <!-- string (_s...) -->
   <dynamicField name="*_si" type="string" stored="false" indexed="true" multiValued="false"/>
   <dynamicField name="*_sim" type="string" stored="false" indexed="true" multiValued="true"/>
@@ -33,7 +34,7 @@
   <dynamicField name="*_ssi" type="string" stored="true" indexed="true" multiValued="false"/>
   <dynamicField name="*_ssim" type="string" stored="true" indexed="true" multiValued="true"/>
   <dynamicField name="*_ssort" type="alphaNumericSort" stored="false" indexed="true" multiValued="false"/>
-  
+
   <!-- text (_t...) -->
   <dynamicField name="*_ti" type="text" stored="false" indexed="true" multiValued="false"/>
   <dynamicField name="*_tim" type="text" stored="false" indexed="true" multiValued="true"/>
@@ -57,15 +58,15 @@
   <dynamicField name="*_itsm" type="tint" stored="true" indexed="false" multiValued="true"/>
   <dynamicField name="*_itsi" type="tint" stored="true" indexed="true" multiValued="false"/>
   <dynamicField name="*_itsim" type="tint" stored="true" indexed="true" multiValued="true"/>
-  
+
   <!-- boolean (_b...) -->
   <dynamicField name="*_bi" type="boolean" stored="false" indexed="true" multiValued="false"/>
   <dynamicField name="*_bs" type="boolean" stored="true" indexed="false" multiValued="false"/>
   <dynamicField name="*_bsi" type="boolean" stored="true" indexed="true" multiValued="false"/>
-  
+
   <!-- Enable ping with field called 'text' -->
   <field name="text" type="text" indexed="true" stored="false" multiValued="true"/>
-   
+
   <!-- suggest copyFields -->
   <copyField source="value" dest="value_suggest" />
   <copyField source="value" dest="value_suggest_edge" />
@@ -73,16 +74,16 @@
   <!-- sort copyFields -->
   <copyField source="value" dest="value_ssort" />
 
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
+
+
+
+
+
+
+
+
+
+
 
   <fieldType name="string" class="solr.StrField" sortMissingLast="true" />
   <fieldType name="boolean" class="solr.BoolField" sortMissingLast="true"/>
@@ -105,7 +106,7 @@
   <fieldType name="date" class="solr.TrieDateField" precisionStep="0" positionIncrementGap="0"/>
   <!-- A Trie based date field for faster date range queries and date faceting. -->
   <fieldType name="tdate" class="solr.TrieDateField" precisionStep="6" positionIncrementGap="0"/>
-  
+
   <fieldType name="text" class="solr.TextField" omitNorms="false">
     <analyzer>
       <tokenizer class="solr.ICUTokenizerFactory"/>
@@ -114,7 +115,7 @@
       <filter class="solr.TrimFilterFactory"/>
     </analyzer>
   </fieldType>
-  
+
   <!-- Text suggest: For partial matches that will be boosted lower than exact or left-edge matches, e.g. match 'bro' in "A brown fox". -->
   <fieldType name="text_suggest_ngram" class="solr.TextField">
     <analyzer>
@@ -122,7 +123,7 @@
       <filter class="solr.ICUFoldingFilterFactory"/>  <!-- NFKC, case folding, diacritics removed -->
       <filter class="solr.WordDelimiterFilterFactory" generateWordParts="1" generateNumberParts="1" catenateWords="1" catenateNumbers="1" catenateAll="0" splitOnCaseChange="1"/>
       <filter class="solr.TrimFilterFactory"/>
-      
+
       <filter class="solr.NGramFilterFactory" minGramSize="3" maxGramSize="50"/>
     </analyzer>
   </fieldType>
@@ -140,9 +141,9 @@
       />
     </analyzer>
   </fieldType>
-  
+
   <!-- Text Suggest: For left-edge matches, e.g. match 'A bro' but not 'brown' in "A brown fox". -->
-  
+
   <fieldType name="text_suggest_edge" class="solr.TextField">
     <analyzer>
       <tokenizer class="solr.ICUTokenizerFactory"/>
@@ -152,7 +153,7 @@
       <filter class="solr.EdgeNGramFilterFactory" minGramSize="3" maxGramSize="50"/>
     </analyzer>
   </fieldType>
-   
+
   <!-- Text Suggest: For whole term matches. These will be weighted the highest -->
   <fieldType name="text_suggest" class="solr.TextField" positionIncrementGap="100">
     <analyzer>
@@ -162,5 +163,5 @@
       <filter class="solr.TrimFilterFactory"/>
     </analyzer>
   </fieldType>
-    
+
 </schema>
