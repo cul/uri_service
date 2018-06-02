@@ -8,6 +8,7 @@ sqlite:
     url: 'http://localhost:9983/solr/uri_service_test'
     pool_size: 5
     pool_timeout: 5000
+    auto_commit_after_term_creation: true
   database:
     adapter: sqlite
     database: tmp/db/test.sqlite3
@@ -22,6 +23,7 @@ mysql2:
     url: 'http://localhost:9983/solr/uri_service_test'
     pool_size: 5
     pool_timeout: 5000
+    auto_commit_after_term_creation: true
   database:
     adapter: mysql2
     database: dbname
