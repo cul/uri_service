@@ -2,6 +2,8 @@
 
 A database-backed and Solr-cached lookup/creation service for URIs.  Works with or without Rails.
 
+Note: Version 0.6.x and later are meant for use with Solr 8.
+
 ### Major Concepts:
 
 **External Term (UriService::TermType::EXTERNAL)**
