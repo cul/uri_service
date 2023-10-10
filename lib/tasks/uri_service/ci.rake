@@ -24,6 +24,7 @@ namespace :uri_service do
   task :ci do
     ENV['APP_ENV'] = 'test'
     Rake::Task["uri_service:ci_prepare"].invoke
+    Rake::Task["uri_service:docker:setup_config_files"].invoke
     Rake::Task["uri_service:ci_impl"].invoke
   end
 
