@@ -31,7 +31,7 @@ UriService::init({
   'local_uri_base' => 'http://id.example.com/term/',
   'temporary_uri_base' => 'com:example:id:temporary:',
   'solr' => {
-    'url' => 'http://localhost:8983/solr/uri_service_test',
+    'url' => 'http://localhost:8983/solr/uri_service',
     'pool_size' => 5,
     'pool_timeout' => 5000
   }
@@ -53,7 +53,7 @@ client = UriService::Client.new({
   'local_uri_base' => 'http://id.example.com/term/',
   'temporary_uri_base' => 'com:example:id:temporary:',
   'solr' => {
-    'url' => 'http://localhost:8983/solr/uri_service_test',
+    'url' => 'http://localhost:8983/solr/uri_service',
     'pool_size' => 5,
     'pool_timeout' => 5000
   }
@@ -83,7 +83,7 @@ development:
   local_uri_base: 'http://id.example.com/term/'
   temporary_uri_base: 'com:example:id:temporary:'
   solr:
-    url: 'http://localhost:8983/solr/uri_service_development'
+    url: 'http://localhost:8983/solr/uri_service'
     pool_size: 5
     pool_timeout: 5000
   database:
@@ -96,7 +96,7 @@ test:
   local_uri_base: 'http://id.example.com/term/'
   temporary_uri_base: 'com:example:id:temporary:'
   solr:
-    url: 'http://localhost:8983/solr/uri_service_test'
+    url: 'http://localhost:9983/solr/uri_service'
     pool_size: 5
     pool_timeout: 5000
   database:
@@ -109,7 +109,7 @@ production:
   local_uri_base: 'http://id.example.com/term/'
   temporary_uri_base: 'com:example:id:temporary:'
   solr:
-    url: 'http://localhost:9983/solr/uri_service_production'
+    url: 'http://localhost:8983/solr/uri_service_prod'
     pool_size: 5
     pool_timeout: 5000
   database:

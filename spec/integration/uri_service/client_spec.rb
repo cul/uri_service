@@ -672,13 +672,13 @@ describe UriService::Client, type: :integration do
         UriService.client.rsolr_pool.with do |rsolr|
           response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
           doc = response['response']['docs'][0]
-          expect(doc.except('score', 'timestamp', '_version_')).to eq(expected1)
+          expect(doc.except('score', 'timestamp', '_version_', '_root_')).to eq(expected1)
         end
         UriService.client.send_term_to_solr(vocabulary_string_key, 'Even grrrreater value!', uri, 'newauthority', additional_fields, type, internal_id)
         UriService.client.rsolr_pool.with do |rsolr|
           response = rsolr.get('select', params: { :q => '*:*', :fq => 'uri:' + RSolr.solr_escape(uri) })
           doc = response['response']['docs'][0]
-          expect(doc.except('score', 'timestamp', '_version_')).to eq(expected2)
+          expect(doc.except('score', 'timestamp', '_version_', '_root_')).to eq(expected2)
         end
       end
 
@@ -1102,7 +1102,7 @@ describe UriService::Client, type: :integration do
             :additional_fields => JSON.generate(new_additional_fields),
             :id => term['internal_id']
           })
-          expect(doc.except('timestamp', '_version_', 'score', 'updated_bsi')).to eq({
+          expect(doc.except('timestamp', '_version_', 'score', 'updated_bsi', '_root_')).to eq({
             "vocabulary_string_key" => "names",
             "value" => "updated value",
             "uri" => "http://id.library.columbia.edu/term/1234567",

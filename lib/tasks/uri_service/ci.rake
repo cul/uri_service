@@ -19,13 +19,14 @@ namespace :uri_service do
     puts "[Warning] Exception creating rspec rake tasks.  This message can be ignored in environments that intentionally do not pull in the RSpec gem (i.e. production)."
     puts e
   end
-  
+
   desc "CI build"
   task :ci do
-    Rake::Task["uri_service:ci_with_solr_6_wrapper"].invoke
-    #Rake::Task["uri_service:ci_with_jetty_wrapper"].invoke
+    ENV['APP_ENV'] = 'test'
+    Rake::Task["uri_service:ci_prepare"].invoke
+    Rake::Task["uri_service:ci_impl"].invoke
   end
-  
+
   desc "Preparation steps for the CI run"
   task :ci_prepare do
     # Delete existing test database
@@ -36,65 +37,36 @@ namespace :uri_service do
     client.create_required_tables
     FileUtils.mkdir_p('tmp')
   end
-  
-  desc "CI build (using SolrWrapper and Solr 6)"
-  task ci_with_solr_6_wrapper: :ci_prepare do
-    solr_version = '6.3.0'
-    instance_dir = File.join('tmp', "solr-#{solr_version}")
-    FileUtils.rm_rf(instance_dir)
-    
-    puts "Unpacking and starting solr...\n"
-    SolrWrapper.wrap({
-      port: 9983,
-      version: solr_version,
-      verbose: false,
-      mirror_url: 'http://lib-solr-mirror.princeton.edu/dist/',
-      managed: true,
-      download_path: File.join('tmp', "solr-#{solr_version}.zip"),
-      instance_dir: instance_dir,
-    }) do |solr_wrapper_instance|
-      
-      # Create collection
-      solr_wrapper_instance.with_collection(name: 'uri_service_test', dir: File.join('spec/fixtures', 'uri_service_test_cores/uri_service_test-solr6-conf')) do |collection_name|
+
+  desc 'CI build just running specs'
+  task :ci_impl do
+    docker_wrapper do
+      duration = Benchmark.realtime do
         Rake::Task["uri_service:rspec"].invoke
       end
-      
-      puts 'Stopping solr...'
+      puts "\nCI run finished in #{duration} seconds."
     end
   end
-  
-  desc "CI build (using JettyWrapper)"
-  task ci_with_jetty_wrapper: :ci_prepare do
-    
-    Jettywrapper.url = "https://github.com/cul/hydra-jetty/archive/solr-only.zip"
-    Jettywrapper.jetty_dir = File.join('tmp', 'jetty-test')
-  
-    unless File.exists?(Jettywrapper.jetty_dir)
-      puts "\n" + 'No test jetty found.  Will download / unzip a copy now.' + "\n"
+
+  def docker_wrapper(&block)
+    unless ENV['APP_ENV'] == 'test'
+      raise 'This task should only be run in the test environment (because it clears docker volumes)'
     end
-    
-    Rake::Task["jetty:clean"].invoke # Clear and recreate previous jetty directory
-    
-    # Copy solr core fixture to new solr instance
-    FileUtils.cp_r('spec/fixtures/uri_service_test_cores/uri_service_test', File.join(Jettywrapper.jetty_dir, 'solr'))
-    # Update solr.xml configuration file so that it recognizes this code
-    solr_xml_data = File.read(File.join(Jettywrapper.jetty_dir, 'solr/solr.xml'))
-    solr_xml_data.gsub!('</cores>', '  <core name="uri_service_test" instanceDir="uri_service_test" />' + "\n" + '  </cores>')
-    File.open(File.join(Jettywrapper.jetty_dir, 'solr/solr.xml'), 'w') { |file| file.write(solr_xml_data) }
-    
-    jetty_params = Jettywrapper.load_config.merge({
-      jetty_home: Jettywrapper.jetty_dir,
-      solr_home: 'solr',
-      startup_wait: 75,
-      jetty_port: 9983,
-      java_version: '>= 1.8',
-      java_opts: ["-XX:MaxPermSize=128m", "-Xmx256m"]
-    })
-    error = Jettywrapper.wrap(jetty_params) do
-      Rake::Task["uri_service:rspec"].invoke
+
+    # Stop docker if it's currently running (so we can delete any old volumes)
+    Rake::Task['uri_service:docker:stop'].invoke
+    # Rake tasks must be re-enabled if you want to call them again later during the same run
+    Rake::Task['uri_service:docker:stop'].reenable
+
+    ENV['app_env_confirmation'] = ENV['APP_ENV'] # setting this to skip prompt in volume deletion task
+    Rake::Task['uri_service:docker:delete_volumes'].invoke
+
+    Rake::Task['uri_service:docker:start'].invoke
+    begin
+      block.call
+    ensure
+      Rake::Task['uri_service:docker:stop'].invoke
     end
-    raise "test failures: #{error}" if error
-    
   end
 
 end
