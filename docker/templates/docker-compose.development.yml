@@ -1,0 +1,16 @@
+version: "3.9"
+
+# Although a name isn't required for docker to work, we want to explicitly specify it so we know
+# which prefix is used for the volumes that we create.
+name: 'uri-service-development'
+
+volumes:
+  solr-cores:
+services:
+  solr:
+    build: ./solr
+    restart: always
+    ports:
+      - '8983:8983'
+    volumes:
+      - solr-cores:/data

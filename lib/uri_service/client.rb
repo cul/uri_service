@@ -96,7 +96,7 @@ class UriService::Client
   def test_connection
     @db.test_connection # Raises Sequel::DatabaseConnectionError if connection didn't work
     @rsolr_pool.with do |rsolr|
-      rsolr.get('admin/ping') # Raises Errno::ECONNREFUSED if connection didn't work
+      rsolr.get('admin/system') # Raises Errno::ECONNREFUSED if connection didn't work
     end
   end
 
